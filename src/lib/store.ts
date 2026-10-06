@@ -1,4 +1,4 @@
-import type { Creator, KnowledgeBase, Post, Settings } from '@/types'
+import type { Creator, KnowledgeBase, ModelStatus, Post, Settings } from '@/types'
 
 // 資料全存在 chrome.storage.local（manifest 有 unlimitedStorage）。
 // 在一般網頁預覽（npm run dev）時沒有 chrome.storage，改用 localStorage，方便開發介面。
@@ -23,10 +23,29 @@ export const DEFAULT_SETTINGS: Settings = {
   keys: {},
   models: {
     groq: 'openai/gpt-oss-120b',
-    gemini: 'gemini-2.5-flash',
+    gemini: 'gemini-3.8-flash',
     openai: 'gpt-4o-mini',
     anthropic: 'claude-opus-5-5',
   },
+}
+
+/** 設定下拉選單列出的模型。清單外的名稱可以選「自訂」自己輸入。 */
+export const MODEL_OPTIONS: Record<Settings['provider'], string[]> = {
+  groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'],
+  gemini: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
+  openai: ['gpt-4o-mini'],
+  anthropic: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5'],
+}
+
+/** key 是「供應商:模型」 */
+export async function getModelStatus(): Promise<Record<string, ModelStatus>> {
+  return (await area.get(['modelStatus'])).modelStatus ?? {}
+}
+
+export async function setModelStatus(key: string, state: ModelStatus['state']) {
+  const all = await getModelStatus()
+  if (all[key]?.state === state) return // 狀態沒變就不寫，避免每則萃取都觸發畫面重讀
+  await area.set({ modelStatus: { ...all, [key]: { state, at: Date.now() } } })
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -88,8 +107,16 @@ export async function mergeCollected(creator: string, fullName: string, posts: O
   return { added, total: idx.codes.length }
 }
 
+/** 整合知識庫途中每次 AI 回應的暫存（鍵是送出內容的雜湊）。整合完成就清掉。 */
+export async function getKbCache(creator: string): Promise<Record<string, string>> {
+  return (await area.get([`kbcache:${creator}`]))[`kbcache:${creator}`] ?? {}
+}
+
+export const saveKbCache = (creator: string, cache: Record<string, string> | null) =>
+  cache ? area.set({ [`kbcache:${creator}`]: cache }) : area.remove([`kbcache:${creator}`])
+
 export async function deleteCreator(creator: Creator) {
-  await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, ...creator.codes.map((c) => `post:${c}`)])
+  await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, `kbcache:${creator.name}`, ...creator.codes.map((c) => `post:${c}`)])
 }
 
 /** 主頁面用：儲存內容有變（例如背景程式收集到新貼文）就通知。 */

@@ -1,6 +1,6 @@
 import { LlmError, generate, inputBudget, parseJson, transcribe } from '@/lib/llm'
 import { AGGREGATE_SYSTEM, DIGEST_SYSTEM, aggregateUser, digestUser, mergeUser } from '@/lib/prompts'
-import { getPosts, getSettings, saveKnowledgeBase, savePost } from '@/lib/store'
+import { getKbCache, getPosts, getSettings, saveKbCache, saveKnowledgeBase, savePost } from '@/lib/store'
 import type { Creator, Digest, Post, Settings } from '@/types'
 
 export interface Progress {
@@ -43,13 +43,15 @@ async function download(p: Post): Promise<Blob> {
 }
 
 /** 處理一位博主所有還沒完成的貼文：下載音軌 → 轉錄 → 萃取，最後整合成知識庫。
- *  金鑰錯誤、額度用完會停下整批（拋出 LlmError）；單則失敗只記在那一則，繼續下一則。 */
+ *  金鑰錯誤、額度用完、重試後仍限流會停下整批（拋出 LlmError），停下前先用已完成的貼文整合知識庫；
+ *  單則失敗只記在那一則，繼續下一則。 */
 export async function processCreator(creator: Creator, signal: AbortSignal, onProgress: (p: Progress) => void) {
   const settings = await getSettings()
   if (!settings.keys.groq) throw new LlmError('轉錄需要 Groq 金鑰（免費），請先到設定填寫。', 'auth')
   const posts = await getPosts(creator)
   const todo = posts.filter((p) => p.status !== 'done')
   const report = (done: number, status: string) => onProgress({ done, total: todo.length, status })
+  let fatal: LlmError | undefined
 
   for (const [i, p] of todo.entries()) {
     if (signal.aborted) break
@@ -76,7 +78,11 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
       p.status = 'done'
       p.error = undefined
     } catch (e) {
-      if (e instanceof LlmError && (e.kind === 'auth' || e.kind === 'quota')) throw e
+      // rate 到這裡代表重試完還是限流或過載：下一則多半一樣，停下來免得白白消耗每日額度
+      if (e instanceof LlmError && ['auth', 'quota', 'model', 'rate'].includes(e.kind)) {
+        fatal = e
+        break
+      }
       p.status = 'error'
       p.error = e instanceof Error ? e.message : String(e)
     }
@@ -87,13 +93,18 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
   }
 
   if (signal.aborted) return
-  report(todo.length, '整合知識庫…')
-  await buildKnowledgeBase(creator, settings, (m) => report(todo.length, m))
-  report(todo.length, '完成')
+  if (fatal) {
+    // 停在半路也先整合已完成的部分。整合用同一個 AI，額度用完時這步多半也失敗，失敗就只回報原本的原因
+    await buildKnowledgeBase(creator, settings, onProgress).catch(() => {})
+    throw fatal
+  }
+  await buildKnowledgeBase(creator, settings, onProgress)
+  onProgress({ done: 1, total: 1, status: '完成' })
 }
 
-/** 跨篇整合成知識庫。內容超過模型一次能收的量，就分批整理再合併（Groq 免費方案需要）。 */
-export async function buildKnowledgeBase(creator: Creator, settings: Settings, onStatus: (m: string) => void) {
+/** 跨篇整合成知識庫。內容超過模型一次能收的量，就分批整理再合併（Groq 免費方案需要）。
+ *  每次呼叫的結果先暫存：額度在半路用完時，下次只做還沒做的批次。 */
+export async function buildKnowledgeBase(creator: Creator, settings: Settings, onProgress: (p: Progress) => void) {
   const posts = (await getPosts(creator)).filter((p) => p.status === 'done' && p.digest)
   const kept = posts.filter((p) => p.digest!.value !== '低')
   const use = kept.length ? kept : posts
@@ -109,20 +120,57 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
     batches[batches.length - 1].push(it)
   }
 
-  const call = (user: string) => generate(settings, AGGREGATE_SYSTEM, user, { onWait: onStatus })
+  // 進度：每批一步，分批時最後的合併算一步
+  const total = batches.length + (batches.length > 1 ? 1 : 0)
+  let step = 0
+  let status = ''
+  const say = (m: string) => onProgress({ done: step, total, status: m })
+
+  const cache = await getKbCache(creator.name)
+  const call = async (user: string) => {
+    const key = hash(user)
+    if (cache[key]) return cache[key]
+    say(`${status}（每批可能要一兩分鐘）`)
+    const out = await generate(settings, AGGREGATE_SYSTEM, user, { onWait: (m) => say(`${status}${m}`) })
+    cache[key] = out
+    await saveKbCache(creator.name, cache)
+    return out
+  }
+  const tooLarge = (e: unknown) => e instanceof LlmError && e.kind === 'too_large'
+  // 字數只是估計：供應商算的 token 可能比預期多。被拒說太大，就對半切再送
+  const digestBatch = async (b: typeof items): Promise<string[]> => {
+    try {
+      return [stripFence(await call(aggregateUser(creator.name, b.length, JSON.stringify(b))))]
+    } catch (e) {
+      if (!tooLarge(e) || b.length < 2) throw e
+      const mid = b.length >> 1
+      return [...(await digestBatch(b.slice(0, mid))), ...(await digestBatch(b.slice(mid)))]
+    }
+  }
   let parts: string[] = []
   for (const [i, b] of batches.entries()) {
-    onStatus(batches.length > 1 ? `整合知識庫：第 ${i + 1}/${batches.length} 批…` : '整合知識庫…')
-    parts.push(stripFence(await call(aggregateUser(creator.name, b.length, JSON.stringify(b)))))
+    status = batches.length > 1 ? `整合知識庫：第 ${i + 1}/${batches.length} 批…` : '整合知識庫…'
+    say(status)
+    parts.push(...(await digestBatch(b)))
+    step++
   }
   // 分批的結果再合併，直到剩一份（每次合併也不能超過上限）
   while (parts.length > 1) {
-    onStatus(`合併 ${parts.length} 份分批結果…`)
+    status = `合併 ${parts.length} 份分批結果…`
+    say(status)
     const next: string[] = []
     for (let i = 0; i < parts.length; ) {
       const group = [parts[i++]]
       while (i < parts.length && [...group, parts[i]].join('').length <= budget) group.push(parts[i++])
-      next.push(group.length === 1 ? group[0] : stripFence(await call(mergeUser(creator.name, group))))
+      if (group.length === 1) next.push(group[0])
+      else {
+        try {
+          next.push(stripFence(await call(mergeUser(creator.name, group))))
+        } catch (e) {
+          if (!tooLarge(e)) throw e
+          next.push(...group) // 合併太大就不合，下面會接起來
+        }
+      }
     }
     if (next.length === parts.length) {
       parts = [parts.join('\n\n')] // 每份都太大、無法再合：直接接起來，至少不遺失內容
@@ -139,6 +187,14 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
     updatedAt: Date.now(),
     postCount: use.length,
   })
+  await saveKbCache(creator.name, null)
+}
+
+/** 暫存用的短鍵（FNV-1a），不用於安全用途 */
+function hash(s: string) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
+  return `${s.length}-${(h >>> 0).toString(36)}`
 }
 
 function stripFence(md: string) {

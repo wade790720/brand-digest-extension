@@ -22,9 +22,10 @@ const STATUS: Record<Post['status'], { label: string; variant: 'secondary' | 'de
 
 const date = (sec: number) => (sec ? new Date(sec * 1000).toLocaleDateString('zh-TW') : '')
 
-export function CreatorView({ creator, run, onStart, onStop }: {
+export function CreatorView({ creator, run, stopReason, onStart, onStop }: {
   creator: Creator
   run: Run | null
+  stopReason?: string
   onStart: () => void
   onStop: () => void
 }) {
@@ -91,6 +92,13 @@ export function CreatorView({ creator, run, onStart, onStop }: {
           )}
         </CardContent>
       </Card>
+
+      {stopReason && !mine && (
+        <Alert variant="destructive">
+          <AlertTitle>萃取中途停下，已完成的部分都有保存</AlertTitle>
+          <AlertDescription>{stopReason}</AlertDescription>
+        </Alert>
+      )}
 
       {failed.length > 0 && !mine && (
         <Alert variant="destructive">

@@ -34,6 +34,12 @@ export interface KnowledgeBase {
   postCount: number
 }
 
+/** 某個模型上次實際呼叫的結果，給設定的下拉選單顯示標籤 */
+export interface ModelStatus {
+  state: 'ok' | 'quota' | 'missing'
+  at: number // 毫秒
+}
+
 export type Provider = 'groq' | 'gemini' | 'openai' | 'anthropic'
 
 export interface Settings {

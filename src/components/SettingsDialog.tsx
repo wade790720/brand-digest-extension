@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -9,8 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { PROVIDER_NAMES } from '@/lib/llm'
-import { DEFAULT_SETTINGS, getSettings, saveSettings } from '@/lib/store'
-import type { Provider, Settings } from '@/types'
+import { DEFAULT_SETTINGS, MODEL_OPTIONS, getModelStatus, getSettings, saveSettings } from '@/lib/store'
+import type { ModelStatus, Provider, Settings } from '@/types'
 
 const KEY_LINKS: Record<Provider, string> = {
   groq: 'https://console.groq.com/keys',
@@ -19,14 +20,36 @@ const KEY_LINKS: Record<Provider, string> = {
   anthropic: 'https://console.anthropic.com/settings/keys',
 }
 
+const CUSTOM = '__custom'
+const DAY = 24 * 60 * 60 * 1000
+
+// ponytail: 額度一律當 24 小時後恢復。Groq 是滾動 24 小時，Gemini 是太平洋時間午夜重置（通常更早）
+function StatusBadge({ st }: { st?: ModelStatus }) {
+  if (st?.state === 'ok') return <Badge variant="outline">可用</Badge>
+  if (st?.state === 'missing') return <Badge variant="destructive">無法使用</Badge>
+  if (st?.state === 'quota' && Date.now() - st.at < DAY) {
+    const back = new Date(st.at + DAY).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    return <Badge variant="destructive">額度用完，約 {back} 恢復</Badge>
+  }
+  return <Badge variant="secondary">還沒用過</Badge>
+}
+
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [s, setS] = useState<Settings>(DEFAULT_SETTINGS)
+  const [status, setStatus] = useState<Record<string, ModelStatus>>({})
+  const [custom, setCustom] = useState(false)
   useEffect(() => {
-    if (open) getSettings().then(setS)
+    if (!open) return
+    getSettings().then(setS)
+    getModelStatus().then(setStatus)
+    setCustom(false)
   }, [open])
 
   const setKey = (p: Provider, v: string) => setS({ ...s, keys: { ...s.keys, [p]: v.trim() } })
   const setModel = (v: string) => setS({ ...s, models: { ...s.models, [s.provider]: v.trim() } })
+
+  const model = s.models[s.provider]
+  const options = [...new Set([...MODEL_OPTIONS[s.provider], ...(model && !custom ? [model] : [])])]
 
   async function save() {
     await saveSettings(s)
@@ -55,7 +78,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
         <div className="grid gap-2">
           <Label>整理重點用的 AI</Label>
-          <Select value={s.provider} onValueChange={(v) => setS({ ...s, provider: v as Provider })}>
+          <Select value={s.provider} onValueChange={(v) => (setCustom(false), setS({ ...s, provider: v as Provider }))}>
             <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {(Object.keys(PROVIDER_NAMES) as Provider[]).map((p) => (
@@ -78,8 +101,22 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
         <div className="grid gap-2">
           <Label htmlFor="model">模型</Label>
-          <Input id="model" value={s.models[s.provider]} onChange={(e) => setModel(e.target.value)} />
-          <p className="text-xs text-muted-foreground">預設：{DEFAULT_SETTINGS.models[s.provider]}</p>
+          <Select value={custom ? CUSTOM : model} onValueChange={(v) => (v === CUSTOM ? setCustom(true) : (setCustom(false), setModel(v)))}>
+            <SelectTrigger id="model" className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {options.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {m} <StatusBadge st={status[`${s.provider}:${m}`]} />
+                </SelectItem>
+              ))}
+              <SelectItem value={CUSTOM}>自訂模型名稱…</SelectItem>
+            </SelectContent>
+          </Select>
+          {custom && (
+            <Input aria-label="自訂模型名稱" placeholder="輸入模型名稱" autoFocus
+              value={model} onChange={(e) => setModel(e.target.value)} />
+          )}
+          <p className="text-xs text-muted-foreground">標籤是上次實際使用的結果。預設：{DEFAULT_SETTINGS.models[s.provider]}</p>
         </div>
 
         <DialogFooter>

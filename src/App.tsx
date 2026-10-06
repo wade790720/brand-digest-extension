@@ -28,6 +28,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toDelete, setToDelete] = useState<Creator | null>(null)
   const [run, setRun] = useState<Run | null>(null)
+  const [stopped, setStopped] = useState<{ creator: string; reason: string } | null>(null) // 上次為什麼停下
   const abort = useRef<AbortController | null>(null)
 
   const reload = useCallback(() => getCreators().then(setCreators), [])
@@ -57,6 +58,7 @@ export default function App() {
     if (run) return
     const ctrl = new AbortController()
     abort.current = ctrl
+    setStopped(null)
     setRun({ creator: creator.name, progress: { done: 0, total: 0, status: '準備中…' } })
     try {
       await processCreator(creator, ctrl.signal, (progress) => setRun({ creator: creator.name, progress }))
@@ -64,7 +66,8 @@ export default function App() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       toast.error(msg, { duration: 10000 })
-      if (e instanceof LlmError && e.kind === 'auth') setSettingsOpen(true)
+      setStopped({ creator: creator.name, reason: msg })
+      if (e instanceof LlmError && (e.kind === 'auth' || e.kind === 'model')) setSettingsOpen(true)
     } finally {
       abort.current = null
       setRun(null)
@@ -129,6 +132,7 @@ export default function App() {
             key={current.name}
             creator={current}
             run={run}
+            stopReason={stopped?.creator === current.name ? stopped.reason : undefined}
             onStart={() => start(current)}
             onStop={() => abort.current?.abort()}
           />

@@ -1,9 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { setModelStatus } from '@/lib/store'
 import type { Provider, Settings } from '@/types'
 
-/** 給使用者看的錯誤。kind 決定要停下整批（auth、quota）還是只跳過這一則。 */
+/** 給使用者看的錯誤。kind 決定要停下整批（auth、quota、model、重試後仍 rate）還是只跳過這一則。 */
 export class LlmError extends Error {
-  readonly kind: 'auth' | 'quota' | 'rate' | 'too_large' | 'other'
+  readonly kind: 'auth' | 'quota' | 'model' | 'rate' | 'too_large' | 'other'
   readonly retryAfterSec?: number
   constructor(message: string, kind: LlmError['kind'], retryAfterSec?: number) {
     super(message)
@@ -16,8 +17,8 @@ export const PROVIDER_NAMES: Record<Provider, string> = {
   groq: 'Groq', gemini: 'Google Gemini', openai: 'OpenAI', anthropic: 'Anthropic Claude',
 }
 
-/** 一次能送多少字。Groq 免費方案每分鐘只有 8000 token，中文大約一字一 token，要切小塊。 */
-export const inputBudget = (p: Provider) => (p === 'groq' ? 4000 : 60000)
+/** 一次能送多少字。Groq 免費方案每分鐘只有 8000 token，繁中一字常超過一個 token，加上提示詞，要切小塊。 */
+export const inputBudget = (p: Provider) => (p === 'groq' ? 3000 : 60000)
 
 function classify(status: number, body: string, provider: Provider, retryAfter?: string | null): LlmError {
   const name = PROVIDER_NAMES[provider]
@@ -30,9 +31,9 @@ function classify(status: number, body: string, provider: Provider, retryAfter?:
     return new LlmError(`${name} 帳戶額度不足，請到該供應商後台儲值，或在設定換一個供應商。`, 'quota')
   if (/per ?day|perday|tokens per day|requests per day/.test(low))
     return new LlmError(`${name} 今天的免費額度用完了，明天再試，或在設定換一個供應商。`, 'quota')
-  if (status === 429) return new LlmError(`${name} 請求太頻繁，稍候自動重試。`, 'rate', wait)
-  if (status === 404) return new LlmError(`${name} 找不到模型，請到設定換一個模型名稱。`, 'auth')
-  if (status >= 500) return new LlmError(`${name} 伺服器暫時過載，稍候自動重試。`, 'rate', wait)
+  if (status === 429) return new LlmError(`${name} 請求太頻繁。`, 'rate', wait)
+  if (status === 404) return new LlmError(`${name} 找不到模型，請到設定換一個模型。`, 'model')
+  if (status >= 500) return new LlmError(`${name} 伺服器暫時過載。`, 'rate', wait)
   return new LlmError(`${name} 回應錯誤（HTTP ${status}）：${body.slice(0, 160)}`, 'other')
 }
 
@@ -83,10 +84,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** 呼叫 AI。限流或伺服器忙會等一下自動重試（遵守 retry-after），其他錯誤直接拋出。 */
 export async function generate(s: Settings, system: string, user: string, opts: { json?: boolean; onWait?: (msg: string) => void } = {}) {
+  const id = `${s.provider}:${s.models[s.provider]}`
   for (let attempt = 0; ; attempt++) {
     try {
-      return await callOnce(s, system, user, !!opts.json)
+      const out = await callOnce(s, system, user, !!opts.json)
+      await setModelStatus(id, 'ok')
+      return out
     } catch (e) {
+      if (e instanceof LlmError && (e.kind === 'quota' || e.kind === 'model'))
+        await setModelStatus(id, e.kind === 'quota' ? 'quota' : 'missing')
       if (!(e instanceof LlmError) || e.kind !== 'rate' || attempt >= 4) throw e
       const sec = Math.min(e.retryAfterSec ?? 5 * 2 ** attempt, 90)
       opts.onWait?.(`${e.message}（等 ${Math.round(sec)} 秒）`)
