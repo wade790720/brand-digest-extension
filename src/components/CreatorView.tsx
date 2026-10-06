@@ -1,4 +1,4 @@
-import { ExternalLink, FileText, Loader2, Play, Square } from 'lucide-react'
+import { Download, ExternalLink, FileText, Loader2, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -6,13 +6,15 @@ import type { Run } from '@/App'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { TheoryDialog } from '@/components/TheoryDialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getKnowledgeBase, getPosts, onStoreChange } from '@/lib/store'
-import type { Creator, KnowledgeBase, Post } from '@/types'
+import { deleteTheory, getKnowledgeBase, getPosts, getTheories, onStoreChange } from '@/lib/store'
+import { download } from '@/lib/utils'
+import type { Creator, KnowledgeBase, Post, Theory, TheoryDoc } from '@/types'
 
 const STATUS: Record<Post['status'], { label: string; variant: 'secondary' | 'default' | 'destructive' }> = {
   new: { label: '待處理', variant: 'secondary' },
@@ -22,19 +24,35 @@ const STATUS: Record<Post['status'], { label: string; variant: 'secondary' | 'de
 
 const date = (sec: number) => (sec ? new Date(sec * 1000).toLocaleDateString('zh-TW') : '')
 
-export function CreatorView({ creator, run, stopReason, onStart, onStop }: {
+function Markdown({ text }: { text: string }) {
+  return (
+    <article className="prose prose-neutral max-w-none dark:prose-invert">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}
+        components={{ a: (props) => <a {...props} target="_blank" rel="noreferrer" /> }}>
+        {text}
+      </ReactMarkdown>
+    </article>
+  )
+}
+
+export function CreatorView({ creator, run, stopReason, onStart, onTheory, onStop }: {
   creator: Creator
   run: Run | null
   stopReason?: string
   onStart: () => void
+  onTheory: (topic: string, skeleton: Theory[]) => void
   onStop: () => void
 }) {
   const [posts, setPosts] = useState<Post[]>([])
   const [kb, setKb] = useState<KnowledgeBase>()
+  const [theories, setTheories] = useState<TheoryDoc[]>([])
+  const [tab, setTab] = useState('kb') // kb、posts，或 theory:<主題>
+  const [dialogTopic, setDialogTopic] = useState<string | null>(null) // null＝對話框關著
 
   const load = useCallback(async () => {
     setPosts(await getPosts(creator))
     setKb(await getKnowledgeBase(creator.name))
+    setTheories(Object.values(await getTheories(creator.name)))
   }, [creator])
   useEffect(() => {
     load()
@@ -47,6 +65,12 @@ export function CreatorView({ creator, run, stopReason, onStart, onStop }: {
   const todo = posts.length - done
   const mine = run?.creator === creator.name
   const busyElsewhere = !!run && !mine
+
+  async function removeTheory(topic: string) {
+    if (!confirm(`刪除「理論對位：${topic}」？刪掉後要重新產生。`)) return
+    await deleteTheory(creator.name, topic)
+    setTab('kb')
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-8">
@@ -95,7 +119,7 @@ export function CreatorView({ creator, run, stopReason, onStart, onStop }: {
 
       {stopReason && !mine && (
         <Alert variant="destructive">
-          <AlertTitle>萃取中途停下，已完成的部分都有保存</AlertTitle>
+          <AlertTitle>中途停下，已完成的部分都有保存</AlertTitle>
           <AlertDescription>{stopReason}</AlertDescription>
         </Alert>
       )}
@@ -107,30 +131,72 @@ export function CreatorView({ creator, run, stopReason, onStart, onStop }: {
         </Alert>
       )}
 
-      <Tabs defaultValue="kb">
-        <TabsList>
-          <TabsTrigger value="kb">知識庫</TabsTrigger>
-          <TabsTrigger value="posts">貼文（{posts.length}）</TabsTrigger>
-        </TabsList>
+      <Tabs value={tab} onValueChange={setTab}>
+        <div className="flex flex-wrap items-center gap-2">
+          <TabsList className="h-auto flex-wrap">
+            <TabsTrigger value="kb">知識庫</TabsTrigger>
+            {theories.map((d) => (
+              <TabsTrigger key={d.topic} value={`theory:${d.topic}`}>理論對位：{d.topic}</TabsTrigger>
+            ))}
+            <TabsTrigger value="posts">貼文（{posts.length}）</TabsTrigger>
+          </TabsList>
+          <Button variant="ghost" size="sm" disabled={!!run || done === 0} onClick={() => setDialogTopic('')}
+            title="把經驗對位到既有理論，產生新的一篇">
+            <Plus /> 理論對位
+          </Button>
+        </div>
 
-        <TabsContent value="kb" className="pt-4">
+        <TabsContent value="kb" className="space-y-4 pt-4">
           {kb ? (
-            <article className="prose prose-neutral max-w-none dark:prose-invert">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}
-                components={{ a: (props) => <a {...props} target="_blank" rel="noreferrer" /> }}>
-                {kb.markdown}
-              </ReactMarkdown>
-            </article>
+            <>
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={() => download(`${creator.name}-知識庫.md`, kb.markdown)}>
+                  <Download /> 下載 Markdown
+                </Button>
+              </div>
+              <Markdown text={kb.markdown} />
+            </>
           ) : (
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon"><FileText /></EmptyMedia>
                 <EmptyTitle>還沒有知識庫</EmptyTitle>
-                <EmptyDescription>按「開始萃取」，處理完會整合成一份知識庫。</EmptyDescription>
+                <EmptyDescription>按上方的按鈕開始，處理完會整合成一份知識庫。</EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}
         </TabsContent>
+
+        {theories.map((d) => (
+          <TabsContent key={d.topic} value={`theory:${d.topic}`} className="space-y-4 pt-4">
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="outline" size="sm" disabled={!!run} onClick={() => setDialogTopic(d.topic)}>
+                <RefreshCw /> {d.markdown ? '重新產生' : '繼續產生'}
+              </Button>
+              {d.markdown && (
+                <Button variant="outline" size="sm" onClick={() => download(`${creator.name}-理論對位-${d.topic}.md`, d.markdown!)}>
+                  <Download /> 下載 Markdown
+                </Button>
+              )}
+              <Button variant="outline" size="sm" disabled={mine} onClick={() => removeTheory(d.topic)}>
+                <Trash2 /> 刪除
+              </Button>
+            </div>
+            {d.markdown ? (
+              <Markdown text={d.markdown} />
+            ) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon"><FileText /></EmptyMedia>
+                  <EmptyTitle>{mine ? '產生中…' : '還沒產生完成'}</EmptyTitle>
+                  <EmptyDescription>
+                    {mine ? '進度在上方。' : '按「繼續產生」，已完成的步驟不會重做。'}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </TabsContent>
+        ))}
 
         <TabsContent value="posts" className="pt-4">
           <Table>
@@ -161,6 +227,10 @@ export function CreatorView({ creator, run, stopReason, onStart, onStop }: {
           </Table>
         </TabsContent>
       </Tabs>
+
+      <TheoryDialog creator={creator} open={dialogTopic !== null} initialTopic={dialogTopic ?? ''}
+        onOpenChange={(o) => !o && setDialogTopic(null)}
+        onStart={(topic, sk) => (setTab(`theory:${topic}`), onTheory(topic, sk))} />
     </div>
   )
 }

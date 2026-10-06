@@ -40,6 +40,22 @@ export interface ModelStatus {
   at: number // 毫秒
 }
 
+/** 理論骨架：理論 → 子原則。id 依順序編（T1、T1.1…），使用者編輯時不用管 id。 */
+export interface Theory {
+  id: string
+  name: string
+  source: string // 提出者或來源
+  principles: { id: string; name: string }[]
+}
+
+/** 理論對位版：同一位博主的另一篇，一個主題一篇。骨架先存，產生完才有 markdown。 */
+export interface TheoryDoc {
+  topic: string
+  skeleton: Theory[]
+  markdown?: string
+  updatedAt?: number
+}
+
 export type Provider = 'groq' | 'gemini' | 'openai' | 'anthropic'
 
 export interface Settings {

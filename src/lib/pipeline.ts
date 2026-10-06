@@ -1,6 +1,6 @@
 import { LlmError, generate, inputBudget, parseJson, transcribe } from '@/lib/llm'
 import { AGGREGATE_SYSTEM, DIGEST_SYSTEM, aggregateUser, digestUser, mergeUser } from '@/lib/prompts'
-import { getKbCache, getPosts, getSettings, saveKbCache, saveKnowledgeBase, savePost } from '@/lib/store'
+import { getCache, getPosts, getSettings, saveCache, saveKnowledgeBase, savePost } from '@/lib/store'
 import type { Creator, Digest, Post, Settings } from '@/types'
 
 export interface Progress {
@@ -105,9 +105,7 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
 /** 跨篇整合成知識庫。內容超過模型一次能收的量，就分批整理再合併（Groq 免費方案需要）。
  *  每次呼叫的結果先暫存：額度在半路用完時，下次只做還沒做的批次。 */
 export async function buildKnowledgeBase(creator: Creator, settings: Settings, onProgress: (p: Progress) => void) {
-  const posts = (await getPosts(creator)).filter((p) => p.status === 'done' && p.digest)
-  const kept = posts.filter((p) => p.digest!.value !== '低')
-  const use = kept.length ? kept : posts
+  const { posts, use } = await keptPosts(creator)
   if (!use.length) return
 
   // 只送主題與知識點：金句、名詞不進知識庫，省 token
@@ -126,16 +124,10 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
   let status = ''
   const say = (m: string) => onProgress({ done: step, total, status: m })
 
-  const cache = await getKbCache(creator.name)
-  const call = async (user: string) => {
-    const key = hash(user)
-    if (cache[key]) return cache[key]
-    say(`${status}（每批可能要一兩分鐘）`)
-    const out = await generate(settings, AGGREGATE_SYSTEM, user, { onWait: (m) => say(`${status}${m}`) })
-    cache[key] = out
-    await saveKbCache(creator.name, cache)
-    return out
-  }
+  const cached = await cachedCaller(`kb:${creator.name}`, settings)
+  const call = (user: string) => cached.call(AGGREGATE_SYSTEM, user, {
+    onStart: () => say(`${status}（每批可能要一兩分鐘）`), onWait: (m) => say(`${status}${m}`),
+  })
   const tooLarge = (e: unknown) => e instanceof LlmError && e.kind === 'too_large'
   // 字數只是估計：供應商算的 token 可能比預期多。被拒說太大，就對半切再送
   const digestBatch = async (b: typeof items): Promise<string[]> => {
@@ -181,13 +173,45 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
 
   const dropped = posts.length - use.length
   const note = `_共 ${posts.length} 則${dropped ? `，篩掉 ${dropped} 則低含金量後整合 ${use.length} 則` : ''}_`
-  const index = use.map((p, i) => `${i + 1}. ${p.digest!.topic} — [看原文](${postUrl(p.code)})`).join('\n')
   await saveKnowledgeBase(creator.name, {
-    markdown: `${note}\n\n${parts[0]}\n\n## 來源索引\n\n${index}\n`,
+    markdown: `${note}\n\n${parts[0]}\n\n${sourceIndex(use)}\n`,
     updatedAt: Date.now(),
     postCount: use.length,
   })
-  await saveKbCache(creator.name, null)
+  await cached.clear()
+}
+
+/** 已完成的貼文，和篩掉低含金量後要整合的（全部都低就不篩）。use 的順序就是 [編號]。 */
+export async function keptPosts(creator: Creator) {
+  const posts = (await getPosts(creator)).filter((p) => p.status === 'done' && p.digest)
+  const kept = posts.filter((p) => p.digest!.value !== '低')
+  return { posts, use: kept.length ? kept : posts }
+}
+
+/** 文末的來源索引：[n] 主題 — 連結。程式產生，保證每個 [編號] 都能追回原文。 */
+export const sourceIndex = (use: Post[]) =>
+  `## 來源索引\n\n${use.map((p, i) => `${i + 1}. ${p.digest!.topic} — [看原文](${postUrl(p.code)})`).join('\n')}`
+
+/** 呼叫 AI，回應先暫存在 scope 底下：額度在半路用完時，下次同樣的請求直接用暫存。整理完成後呼叫 clear。 */
+export async function cachedCaller(scope: string, settings: Settings) {
+  const cache = await getCache(scope)
+  return {
+    async call(system: string, user: string, opts: { json?: boolean; onStart?: () => void; onWait?: (m: string) => void } = {}) {
+      const key = hash(system + user)
+      if (cache[key] !== undefined) return cache[key]
+      opts.onStart?.()
+      const out = await generate(settings, system, user, opts)
+      cache[key] = out
+      await saveCache(scope, cache)
+      return out
+    },
+    /** 回應不能用（例如格式錯）就丟掉，下次重新問 */
+    async forget(system: string, user: string) {
+      delete cache[hash(system + user)]
+      await saveCache(scope, cache)
+    },
+    clear: () => saveCache(scope, null),
+  }
 }
 
 /** 暫存用的短鍵（FNV-1a），不用於安全用途 */
@@ -197,7 +221,7 @@ function hash(s: string) {
   return `${s.length}-${(h >>> 0).toString(36)}`
 }
 
-function stripFence(md: string) {
+export function stripFence(md: string) {
   const t = md.trim()
   return t.startsWith('```') ? t.replace(/^```\w*\n?/, '').replace(/```$/, '').trim() : t
 }

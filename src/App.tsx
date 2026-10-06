@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { LlmError } from '@/lib/llm'
 import { processCreator, type Progress } from '@/lib/pipeline'
 import { deleteCreator, getCreators, getSettings, onStoreChange } from '@/lib/store'
+import { buildTheory } from '@/lib/theory'
 import type { Creator } from '@/types'
 
 export interface Run {
@@ -54,15 +55,16 @@ export default function App() {
 
   const current = creators.find((c) => c.name === selected)
 
-  async function start(creator: Creator) {
+  /** 一次只跑一件事（萃取或理論對位），進度和停止原因都顯示在這位博主的頁面上 */
+  async function runTask(creator: Creator, task: typeof processCreator, doneMsg: string) {
     if (run) return
     const ctrl = new AbortController()
     abort.current = ctrl
     setStopped(null)
     setRun({ creator: creator.name, progress: { done: 0, total: 0, status: '準備中…' } })
     try {
-      await processCreator(creator, ctrl.signal, (progress) => setRun({ creator: creator.name, progress }))
-      if (!ctrl.signal.aborted) toast.success(`${creator.name} 的知識庫已更新`)
+      await task(creator, ctrl.signal, (progress) => setRun({ creator: creator.name, progress }))
+      if (!ctrl.signal.aborted) toast.success(doneMsg)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       toast.error(msg, { duration: 10000 })
@@ -133,7 +135,9 @@ export default function App() {
             creator={current}
             run={run}
             stopReason={stopped?.creator === current.name ? stopped.reason : undefined}
-            onStart={() => start(current)}
+            onStart={() => runTask(current, processCreator, `${current.name} 的知識庫已更新`)}
+            onTheory={(topic, sk) => runTask(current, (c, signal, onProgress) => buildTheory(c, topic, sk, signal, onProgress),
+              `理論對位：${topic} 已產生`)}
             onStop={() => abort.current?.abort()}
           />
         ) : (

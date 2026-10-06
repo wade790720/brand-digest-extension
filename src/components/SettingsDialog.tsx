@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { Download, Upload } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,7 +11,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { PROVIDER_NAMES } from '@/lib/llm'
-import { DEFAULT_SETTINGS, MODEL_OPTIONS, getModelStatus, getSettings, saveSettings } from '@/lib/store'
+import { DEFAULT_SETTINGS, MODEL_OPTIONS, exportAll, getModelStatus, getSettings, importAll, saveSettings } from '@/lib/store'
+import { download } from '@/lib/utils'
 import type { ModelStatus, Provider, Settings } from '@/types'
 
 const KEY_LINKS: Record<Provider, string> = {
@@ -51,6 +53,25 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const model = s.models[s.provider]
   const options = [...new Set([...MODEL_OPTIONS[s.provider], ...(model && !custom ? [model] : [])])]
 
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function exportBackup() {
+    const day = new Date().toLocaleDateString('sv') // YYYY-MM-DD
+    download(`brand-digest-備份-${day}.json`, JSON.stringify(await exportAll()), 'application/json')
+  }
+
+  async function importBackup(file: File | undefined) {
+    if (!file) return
+    try {
+      const n = await importAll(JSON.parse(await file.text()))
+      toast.success(`已匯入 ${n} 位博主的資料`)
+    } catch (e) {
+      toast.error(e instanceof SyntaxError ? '檔案格式不對，請選匯出的 .json 備份檔。' : e instanceof Error ? e.message : String(e))
+    } finally {
+      if (fileRef.current) fileRef.current.value = '' // 同一個檔案可以再選一次
+    }
+  }
+
   async function save() {
     await saveSettings(s)
     toast.success('設定已儲存')
@@ -59,7 +80,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>設定</DialogTitle>
           <DialogDescription>金鑰只存在這台電腦的瀏覽器裡，只會送給對應的 AI 供應商。</DialogDescription>
@@ -105,8 +126,9 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <SelectTrigger id="model" className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {options.map((m) => (
-                <SelectItem key={m} value={m}>
-                  {m} <StatusBadge st={status[`${s.provider}:${m}`]} />
+                // 選項文字撐滿整列，標籤才能靠右
+                <SelectItem key={m} value={m} className="*:[span]:last:flex-1">
+                  {m} <span className="ml-auto"><StatusBadge st={status[`${s.provider}:${m}`]} /></span>
                 </SelectItem>
               ))}
               <SelectItem value={CUSTOM}>自訂模型名稱…</SelectItem>
@@ -117,6 +139,21 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               value={model} onChange={(e) => setModel(e.target.value)} />
           )}
           <p className="text-xs text-muted-foreground">標籤是上次實際使用的結果。預設：{DEFAULT_SETTINGS.models[s.provider]}</p>
+        </div>
+
+        <Separator />
+
+        <div className="grid gap-2">
+          <Label>資料備份</Label>
+          <p className="text-xs text-muted-foreground">
+            在 chrome://extensions 移除擴充功能，會一併刪掉所有資料。移除前先匯出備份，重新安裝後再匯入。備份不含金鑰。
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportBackup}><Download /> 匯出備份</Button>
+            <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload /> 匯入備份</Button>
+            <input ref={fileRef} type="file" accept=".json,application/json" hidden
+              onChange={(e) => importBackup(e.target.files?.[0])} />
+          </div>
         </div>
 
         <DialogFooter>

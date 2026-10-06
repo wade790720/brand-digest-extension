@@ -1,4 +1,4 @@
-import type { Creator, KnowledgeBase, ModelStatus, Post, Settings } from '@/types'
+import type { Creator, KnowledgeBase, ModelStatus, Post, Settings, TheoryDoc } from '@/types'
 
 // 資料全存在 chrome.storage.local（manifest 有 unlimitedStorage）。
 // 在一般網頁預覽（npm run dev）時沒有 chrome.storage，改用 localStorage，方便開發介面。
@@ -107,16 +107,66 @@ export async function mergeCollected(creator: string, fullName: string, posts: O
   return { added, total: idx.codes.length }
 }
 
-/** 整合知識庫途中每次 AI 回應的暫存（鍵是送出內容的雜湊）。整合完成就清掉。 */
-export async function getKbCache(creator: string): Promise<Record<string, string>> {
-  return (await area.get([`kbcache:${creator}`]))[`kbcache:${creator}`] ?? {}
+/** 多步驟整理途中每次 AI 回應的暫存（鍵是送出內容的雜湊）。scope 例如「kb:博主」「theory:博主:主題」。整理完成就清掉。 */
+export async function getCache(scope: string): Promise<Record<string, string>> {
+  return (await area.get([`cache:${scope}`]))[`cache:${scope}`] ?? {}
 }
 
-export const saveKbCache = (creator: string, cache: Record<string, string> | null) =>
-  cache ? area.set({ [`kbcache:${creator}`]: cache }) : area.remove([`kbcache:${creator}`])
+export const saveCache = (scope: string, cache: Record<string, string> | null) =>
+  cache ? area.set({ [`cache:${scope}`]: cache }) : area.remove([`cache:${scope}`])
+
+/** 一位博主的理論對位版，key 是主題 */
+export async function getTheories(creator: string): Promise<Record<string, TheoryDoc>> {
+  return (await area.get([`theory:${creator}`]))[`theory:${creator}`] ?? {}
+}
+
+export async function saveTheory(creator: string, doc: TheoryDoc) {
+  await area.set({ [`theory:${creator}`]: { ...(await getTheories(creator)), [doc.topic]: doc } })
+}
+
+export async function deleteTheory(creator: string, topic: string) {
+  const all = await getTheories(creator)
+  delete all[topic]
+  await area.set({ [`theory:${creator}`]: all })
+  await saveCache(`theory:${creator}:${topic}`, null)
+}
 
 export async function deleteCreator(creator: Creator) {
-  await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, `kbcache:${creator.name}`, ...creator.codes.map((c) => `post:${c}`)])
+  const caches = Object.keys(await area.get(null))
+    .filter((k) => k === `cache:kb:${creator.name}` || k.startsWith(`cache:theory:${creator.name}:`))
+  await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, `theory:${creator.name}`, ...caches,
+    ...creator.codes.map((c) => `post:${c}`)])
+}
+
+// —— 備份 ——
+// 金鑰不進備份：備份檔可能被傳出去。設定也不匯出，換電腦重填就好。
+const BACKUP_KEY = /^(creator|post|kb|theory):/
+
+export async function exportAll() {
+  const all = await area.get(null)
+  const data = Object.fromEntries(Object.entries(all).filter(([k]) => BACKUP_KEY.test(k)))
+  return { app: 'brand-digest', version: 1, exportedAt: new Date().toISOString(), data }
+}
+
+/** 匯入備份。同一則貼文：本機已完成、備份沒完成就留本機的；博主的貼文清單取聯集。回傳匯入幾位博主。 */
+export async function importAll(backup: unknown): Promise<number> {
+  const b = backup as { app?: string; data?: Record<string, unknown> }
+  if (b?.app !== 'brand-digest' || typeof b.data !== 'object' || !b.data)
+    throw new Error('這不是 brand-digest 的備份檔。')
+  const data = Object.fromEntries(Object.entries(b.data).filter(([k]) => BACKUP_KEY.test(k)))
+  const local = await area.get(Object.keys(data))
+  for (const [k, v] of Object.entries(data)) {
+    const old = local[k]
+    if (!old) continue
+    if (k.startsWith('post:') && old.status === 'done' && (v as Post).status !== 'done') data[k] = old
+    if (k.startsWith('creator:')) {
+      const c = v as Creator
+      data[k] = { ...c, codes: [...new Set([...c.codes, ...(old as Creator).codes])] }
+    }
+    if (k.startsWith('theory:')) data[k] = { ...old, ...(v as object) }
+  }
+  await area.set(data)
+  return Object.keys(data).filter((k) => k.startsWith('creator:')).length
 }
 
 /** 主頁面用：儲存內容有變（例如背景程式收集到新貼文）就通知。 */
