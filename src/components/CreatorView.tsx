@@ -24,12 +24,53 @@ const STATUS: Record<Post['status'], { label: string; variant: 'secondary' | 'de
 
 const date = (sec: number) => (sec ? new Date(sec * 1000).toLocaleDateString('zh-TW') : '')
 
+// AI 常在表格裡用 <br> 換行。只把 <br> 換成真的換行；其他 HTML 照舊當純文字顯示，不執行 AI 產生的 HTML
+const rehypeBr = () => (tree: any) => {
+  const walk = (node: any) => node.children?.forEach((c: any, i: number) => {
+    if (c.type === 'raw' && /^<br\s*\/?>$/i.test(c.value.trim())) node.children[i] = { type: 'element', tagName: 'br', properties: {}, children: [] }
+    else walk(c)
+  })
+  walk(tree)
+}
+
+// 出處 [6] 變成站內連結 #src-6；後面接 ( 的是一般連結，不動
+const linkCites = (md: string) => md.replace(/\[(\d{1,4})\](?!\()/g, '[\\[$1\\]](#src-$1)')
+
+/** 捲到文末「來源索引」的第 n 項，停下後邊框亮一下（樣式在 index.css 的 .source-flash） */
+function scrollToSource(article: HTMLElement, n: number) {
+  const heading = [...article.querySelectorAll('h2')].find((h) => h.textContent?.includes('來源索引'))
+  const li = heading?.nextElementSibling?.querySelectorAll(':scope > li')[n - 1] as HTMLElement | undefined
+  if (!li) return
+  let done = false
+  const flash = () => {
+    if (done) return
+    done = true
+    li.classList.remove('source-flash')
+    void li.offsetWidth // 連點同一則也要重播動畫
+    li.classList.add('source-flash')
+    setTimeout(() => li.classList.remove('source-flash'), 1500)
+  }
+  // 捲動停下才亮，不然動畫在捲動途中就播完了。已經在畫面裡不會捲動，就靠計時器
+  document.addEventListener('scrollend', flash, { once: true, capture: true })
+  setTimeout(flash, 1000)
+  li.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
 function Markdown({ text }: { text: string }) {
   return (
     <article className="prose prose-neutral max-w-none dark:prose-invert">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}
-        components={{ a: (props) => <a {...props} target="_blank" rel="noreferrer" /> }}>
-        {text}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr]}
+        components={{
+          a: ({ href, node: _node, ...props }) => {
+            const cite = href?.match(/^#src-(\d+)$/)
+            if (!cite) return <a href={href} {...props} target="_blank" rel="noreferrer" />
+            return (
+              <a href={href} {...props} className="no-underline" title={`看第 ${cite[1]} 則的來源`}
+                onClick={(e) => (e.preventDefault(), scrollToSource(e.currentTarget.closest('article')!, Number(cite[1])))} />
+            )
+          },
+        }}>
+        {linkCites(text)}
       </ReactMarkdown>
     </article>
   )

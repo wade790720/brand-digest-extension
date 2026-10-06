@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { setModelStatus } from '@/lib/store'
+import { MODEL_OPTIONS, getModelStatus, setModelStatus } from '@/lib/store'
 import type { Provider, Settings } from '@/types'
 
 /** 給使用者看的錯誤。kind 決定要停下整批（auth、quota、model、重試後仍 rate）還是只跳過這一則。 */
@@ -81,43 +81,87 @@ async function callOnce(s: Settings, system: string, user: string, json: boolean
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const DAY = 24 * 60 * 60 * 1000
 
-/** 呼叫 AI。限流或伺服器忙會等一下自動重試（遵守 retry-after），其他錯誤直接拋出。 */
-export async function generate(s: Settings, system: string, user: string, opts: { json?: boolean; onWait?: (msg: string) => void } = {}) {
-  const id = `${s.provider}:${s.models[s.provider]}`
-  for (let attempt = 0; ; attempt++) {
+/** 要依序試的模型：偏好的排第一，再來是同一家的其他模型（每個模型的額度分開算）。
+ *  上次記錄額度用完（24 小時內）或找不到的先跳過；全部都跳過時仍試偏好的那個，因為記錄可能過時。
+ *  ponytail: 只換同一家的模型。換供應商的話，每批送多少字（inputBudget）也要跟著變，做到一半換會出錯。 */
+async function candidates(prefix: string, preferred: string, others: string[]) {
+  const st = await getModelStatus()
+  const out = (m: string) => {
+    const x = st[`${prefix}:${m}`]
+    return x?.state === 'missing' || (x?.state === 'quota' && Date.now() - x.at < DAY)
+  }
+  const usable = [...new Set([preferred, ...others])].filter((m) => !out(m))
+  return usable.length ? usable : [preferred]
+}
+
+/** 依序換模型呼叫 fn。額度用完或找不到模型就換下一個，其他錯誤直接拋出。 */
+async function withFallback<T>(prefix: string, models: string[], exhausted: string, onSwitch: ((m: string) => void) | undefined,
+  fn: (model: string) => Promise<T>): Promise<T> {
+  for (const [i, model] of models.entries()) {
     try {
-      const out = await callOnce(s, system, user, !!opts.json)
-      await setModelStatus(id, 'ok')
+      const out = await fn(model)
+      await setModelStatus(`${prefix}:${model}`, 'ok')
       return out
     } catch (e) {
-      if (e instanceof LlmError && (e.kind === 'quota' || e.kind === 'model'))
-        await setModelStatus(id, e.kind === 'quota' ? 'quota' : 'missing')
+      if (!(e instanceof LlmError) || (e.kind !== 'quota' && e.kind !== 'model')) throw e
+      await setModelStatus(`${prefix}:${model}`, e.kind === 'quota' ? 'quota' : 'missing')
+      const next = models[i + 1]
+      if (!next) throw e.kind === 'quota' ? new LlmError(exhausted, 'quota') : e
+      onSwitch?.(`${model} ${e.kind === 'quota' ? '額度用完' : '無法使用'}，改用 ${next}`)
+    }
+  }
+  throw new Error('unreachable')
+}
+
+/** 限流或伺服器忙會等一下自動重試（遵守 retry-after），其他錯誤直接拋出。 */
+async function retryRate<T>(fn: () => Promise<T>, onWait?: (msg: string) => void): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn()
+    } catch (e) {
       if (!(e instanceof LlmError) || e.kind !== 'rate' || attempt >= 4) throw e
       const sec = Math.min(e.retryAfterSec ?? 5 * 2 ** attempt, 90)
-      opts.onWait?.(`${e.message}（等 ${Math.round(sec)} 秒）`)
+      onWait?.(`${e.message}（等 ${Math.round(sec)} 秒）`)
       await sleep(sec * 1000)
     }
   }
 }
 
+/** 呼叫 AI。限流會等一下重試；這個模型額度用完，自動換同一家的下一個模型。 */
+export async function generate(s: Settings, system: string, user: string, opts: { json?: boolean; onWait?: (msg: string) => void } = {}) {
+  const p = s.provider
+  const models = await candidates(p, s.models[p], MODEL_OPTIONS[p])
+  const exhausted = `${PROVIDER_NAMES[p]} 所有模型今天的免費額度都用完了。額度恢復後再試，或在設定換一個供應商。`
+  return withFallback(p, models, exhausted, opts.onWait, (model) =>
+    retryRate(() => callOnce({ ...s, models: { ...s.models, [p]: model } }, system, user, !!opts.json), opts.onWait))
+}
+
+// 兩個 Whisper 模型的額度分開算：turbo 用完就換 large-v3
+const WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3']
+
 /** 轉錄一律用 Groq Whisper：免費額度夠用、速度快。瀏覽器裡用不到本機 GPU。 */
-export async function transcribe(s: Settings, audio: Blob): Promise<string> {
+export async function transcribe(s: Settings, audio: Blob, onWait?: (msg: string) => void): Promise<string> {
   const key = s.keys.groq
   if (!key) throw new LlmError('轉錄需要 Groq 金鑰（免費），請到設定填寫。', 'auth')
-  for (let attempt = 0; ; attempt++) {
+  const once = async (model: string) => {
     const form = new FormData()
     form.append('file', audio, 'audio.mp4')
-    form.append('model', 'whisper-large-v3-turbo')
+    form.append('model', model)
     form.append('response_format', 'text')
     const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST', headers: { authorization: `Bearer ${key}` }, body: form,
     })
     if (res.ok) return (await res.text()).trim()
     const err = classify(res.status, await res.text(), 'groq', res.headers.get('retry-after'))
-    if (err.kind !== 'rate' || attempt >= 4) throw err
-    await sleep(Math.min(err.retryAfterSec ?? 5 * 2 ** attempt, 90) * 1000)
+    // 訊息要講明是轉錄，也不能叫使用者換供應商：轉錄固定用 Groq，換了也沒用
+    if (err.kind === 'quota') throw new LlmError(`Groq 轉錄（${model}）今天的免費額度用完了。`, 'quota')
+    throw err
   }
+  const models = await candidates('whisper', WHISPER[0], WHISPER)
+  const exhausted = 'Groq 轉錄（語音轉文字）的兩個模型今天的免費額度都用完了。轉錄固定用 Groq，換「整理重點用的 AI」沒有用。額度是滾動 24 小時計算，晚點再按「開始萃取」。'
+  return withFallback('whisper', models, exhausted, onWait, (m) => retryRate(() => once(m), onWait))
 }
 
 /** 容錯解析 JSON：模型可能包 markdown 圍欄，或前後多講話。 */

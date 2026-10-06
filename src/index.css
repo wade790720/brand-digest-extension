@@ -129,3 +129,42 @@
     @apply font-sans;
     }
 }
+/* 點出處 [n] 捲到來源索引時：藍光沿邊框由左掃到右再淡出。
+   參考 Aceternity signup form 輸入框的 hover（#3b82f6 的放射漸層當邊框）；這裡沒有游標，改成自己掃過去 */
+@property --flash-x {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+.source-flash {
+  position: relative;
+  width: fit-content; /* 邊框貼著文字，不要橫跨整列 */
+}
+
+.source-flash::before {
+  content: '';
+  position: absolute;
+  inset: -0.25em -0.5em -0.25em -2em; /* 左邊多留，把清單編號框進來 */
+  border-radius: var(--radius);
+  padding: 2px;
+  background: radial-gradient(100px circle at var(--flash-x) 50%, #3b82f6, transparent 80%);
+  /* 只留 padding 那一圈：中間挖空，變成邊框 */
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+  animation: source-flash 1.4s ease-out forwards;
+}
+
+@keyframes source-flash {
+  0% { --flash-x: 0%; opacity: 0; }
+  15% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { --flash-x: 100%; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .source-flash::before {
+    animation: none;
+    background: #3b82f6;
+  }
+}

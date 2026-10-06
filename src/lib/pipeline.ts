@@ -64,7 +64,7 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
           const audio = await download(p)
           downloaded = true
           report(i, `${label}：轉錄…`)
-          p.transcript = await transcribe(settings, audio)
+          p.transcript = await transcribe(settings, audio, (m) => report(i, `${label}：${m}`))
         } else {
           p.transcript = '' // 圖片貼文：只用文案
         }
