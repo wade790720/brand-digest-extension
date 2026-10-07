@@ -4,7 +4,7 @@ import type { Provider, Settings } from '@/types'
 
 /** 給使用者看的錯誤。kind 決定要停下整批（auth、quota、model、重試後仍 rate）還是只跳過這一則。 */
 export class LlmError extends Error {
-  readonly kind: 'auth' | 'quota' | 'model' | 'rate' | 'too_large' | 'other'
+  readonly kind: 'auth' | 'quota' | 'model' | 'rate' | 'overload' | 'too_large' | 'bad_json' | 'other'
   readonly retryAfterSec?: number
   constructor(message: string, kind: LlmError['kind'], retryAfterSec?: number) {
     super(message)
@@ -31,9 +31,12 @@ function classify(status: number, body: string, provider: Provider, retryAfter?:
     return new LlmError(`${name} 帳戶額度不足，請到該供應商後台儲值，或在設定換一個供應商。`, 'quota')
   if (/per ?day|perday|tokens per day|requests per day/.test(low))
     return new LlmError(`${name} 今天的免費額度用完了，明天再試，或在設定換一個供應商。`, 'quota')
-  if (status === 429) return new LlmError(`${name} 請求太頻繁。`, 'rate', wait)
+  // Groq 的 JSON 模式：模型輸出沒通過它的格式檢查，就直接回 400、不給結果
+  if (low.includes('json_validate_failed') || low.includes('failed to generate json'))
+    return new LlmError(`${name} 產生的 JSON 格式不對。`, 'bad_json')
+  if (status === 429) return new LlmError(`${name} 達到每分鐘上限。`, 'rate', wait)
   if (status === 404) return new LlmError(`${name} 找不到模型，請到設定換一個模型。`, 'model')
-  if (status >= 500) return new LlmError(`${name} 伺服器暫時過載。`, 'rate', wait)
+  if (status >= 500) return new LlmError(`${name} 伺服器暫時過載。`, 'overload', wait)
   return new LlmError(`${name} 回應錯誤（HTTP ${status}）：${body.slice(0, 160)}`, 'other')
 }
 
@@ -52,9 +55,11 @@ async function callOnce(s: Settings, system: string, user: string, json: boolean
 
   if (p === 'groq' || p === 'openai') {
     const base = p === 'groq' ? 'https://api.groq.com/openai/v1' : 'https://api.openai.com/v1'
-    const r = await post(p, `${base}/chat/completions`, { authorization: `Bearer ${key}` }, {
-      model, messages, temperature: 0.3, ...(json ? { response_format: { type: 'json_object' } } : {}),
+    const ask = (strict: boolean) => post(p, `${base}/chat/completions`, { authorization: `Bearer ${key}` }, {
+      model, messages, temperature: 0.3, ...(strict ? { response_format: { type: 'json_object' } } : {}),
     })
+    // JSON 模式被拒就改用一般模式重問：提示詞本來就要求只回 JSON，呼叫端用 parseJson 容錯解析
+    const r = await ask(json).catch((e) => (json && e instanceof LlmError && e.kind === 'bad_json' ? ask(false) : Promise.reject(e)))
     return r.choices?.[0]?.message?.content ?? ''
   }
   if (p === 'gemini') {
@@ -116,18 +121,55 @@ async function withFallback<T>(prefix: string, models: string[], exhausted: stri
 }
 
 /** 限流或伺服器忙會等一下自動重試（遵守 retry-after），其他錯誤直接拋出。 */
+/** 每分鐘上限（429）等一下一定會恢復，耐心等，最多約 10 分鐘；
+ *  伺服器過載（5xx）重試 4 次還不行就停下，免得一直消耗每日額度。 */
 async function retryRate<T>(fn: () => Promise<T>, onWait?: (msg: string) => void): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn()
     } catch (e) {
-      if (!(e instanceof LlmError) || e.kind !== 'rate' || attempt >= 4) throw e
-      const sec = Math.min(e.retryAfterSec ?? 5 * 2 ** attempt, 90)
-      onWait?.(`${e.message}（等 ${Math.round(sec)} 秒）`)
+      if (!(e instanceof LlmError) || (e.kind !== 'rate' && e.kind !== 'overload')) throw e
+      if (attempt >= (e.kind === 'rate' ? 10 : 4)) throw e
+      const sec = Math.min(e.retryAfterSec ?? (e.kind === 'rate' ? 20 : 5 * 2 ** attempt), 60)
+      onWait?.(`${e.message}等 ${Math.round(sec)} 秒後自動繼續`)
       await sleep(sec * 1000)
     }
   }
 }
+
+// —— 送出前排隊，不去撞每分鐘上限 ——
+// Groq 免費方案每個模型每分鐘 8000 token，留一點餘裕。其他供應商的上限高很多，不排隊。
+// ponytail: token 用「字數 × 1.2 + 1000（回答）」估；所有模型共用一張紀錄表（實際是每個模型分開算，這樣比較保守）
+const TPM: Partial<Record<Provider, number>> = { groq: 7000 }
+const sentLog: Partial<Record<Provider, { at: number; tokens: number }[]>> = {}
+
+/** 最近 60 秒已送出的量加上這次，超過上限就回傳要等幾毫秒，不用等回傳 0 */
+export function waitNeeded(log: { at: number; tokens: number }[], now: number, need: number, cap: number) {
+  const recent = log.filter((x) => now - x.at < 60_000) // 依送出時間排序，舊的在前
+  let used = recent.reduce((n, x) => n + x.tokens, 0)
+  if (used + need <= cap) return 0
+  // 等最舊的幾筆滿 60 秒、從紀錄裡掉出去，直到空出這次需要的量
+  for (const x of recent) {
+    used -= x.tokens
+    if (used + need <= cap) return x.at + 60_000 - now
+  }
+  return 0 // need 已經限制在 cap 以內，走不到這裡
+}
+
+async function pace(p: Provider, chars: number, onWait?: (msg: string) => void) {
+  const cap = TPM[p]
+  if (!cap) return
+  const need = Math.min(Math.round(chars * 1.2) + 1000, cap)
+  const log = (sentLog[p] ??= [])
+  for (let ms = waitNeeded(log, Date.now(), need, cap); ms > 0; ms = waitNeeded(log, Date.now(), need, cap)) {
+    onWait?.(`配合 ${PROVIDER_NAMES[p]} 每分鐘上限，等 ${Math.ceil(ms / 1000)} 秒`)
+    await sleep(ms)
+  }
+  log.splice(0, log.length, ...log.filter((x) => Date.now() - x.at < 60_000), { at: Date.now(), tokens: need })
+}
+
+/** 測試用：清掉排隊紀錄 */
+export const resetPacing = () => Object.keys(sentLog).forEach((k) => delete sentLog[k as Provider])
 
 /** 呼叫 AI。限流會等一下重試；這個模型額度用完，自動換同一家的下一個模型。 */
 export async function generate(s: Settings, system: string, user: string, opts: { json?: boolean; onWait?: (msg: string) => void } = {}) {
@@ -135,7 +177,10 @@ export async function generate(s: Settings, system: string, user: string, opts: 
   const models = await candidates(p, s.models[p], MODEL_OPTIONS[p])
   const exhausted = `${PROVIDER_NAMES[p]} 所有模型今天的免費額度都用完了。額度恢復後再試，或在設定換一個供應商。`
   return withFallback(p, models, exhausted, opts.onWait, (model) =>
-    retryRate(() => callOnce({ ...s, models: { ...s.models, [p]: model } }, system, user, !!opts.json), opts.onWait))
+    retryRate(async () => {
+      await pace(p, system.length + user.length, opts.onWait)
+      return callOnce({ ...s, models: { ...s.models, [p]: model } }, system, user, !!opts.json)
+    }, opts.onWait))
 }
 
 // 兩個 Whisper 模型的額度分開算：turbo 用完就換 large-v3

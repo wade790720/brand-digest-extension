@@ -1,4 +1,4 @@
-// 背景程式（service worker）：存下收集到的貼文、在工具列圖示上顯示這位博主收集了幾則、
+// 背景程式（service worker）：存下收集到的貼文、在工具列圖示上顯示這位主播收集了幾則、
 // 點圖示打開主頁面。只處理資料，不對 IG 發任何請求。
 import { mergeCollected } from '@/lib/store'
 import type { CollectMessage } from '@/types'

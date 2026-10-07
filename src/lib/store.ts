@@ -2,6 +2,9 @@ import type { Creator, KnowledgeBase, ModelStatus, Post, Settings, TheoryDoc } f
 
 // 資料全存在 chrome.storage.local（manifest 有 unlimitedStorage）。
 // 在一般網頁預覽（npm run dev）時沒有 chrome.storage，改用 localStorage，方便開發介面。
+// 開發預覽沒有 chrome.storage.onChanged：寫入時自己發事件，畫面才會跟著更新
+const DEV_CHANGE = 'brand-digest-store-change'
+
 const area = {
   async get(keys: string[] | null): Promise<Record<string, any>> {
     if (globalThis.chrome?.storage) return chrome.storage.local.get(keys)
@@ -11,10 +14,12 @@ const area = {
   async set(items: Record<string, unknown>) {
     if (globalThis.chrome?.storage) return chrome.storage.local.set(items)
     for (const [k, v] of Object.entries(items)) localStorage.setItem(k, JSON.stringify(v))
+    dispatchEvent(new Event(DEV_CHANGE))
   },
   async remove(keys: string[]) {
     if (globalThis.chrome?.storage) return chrome.storage.local.remove(keys)
     keys.forEach((k) => localStorage.removeItem(k))
+    dispatchEvent(new Event(DEV_CHANGE))
   },
 }
 
@@ -107,7 +112,7 @@ export async function mergeCollected(creator: string, fullName: string, posts: O
   return { added, total: idx.codes.length }
 }
 
-/** 多步驟整理途中每次 AI 回應的暫存（鍵是送出內容的雜湊）。scope 例如「kb:博主」「theory:博主:主題」。整理完成就清掉。 */
+/** 多步驟整理途中每次 AI 回應的暫存（鍵是送出內容的雜湊）。scope 例如「kb:主播」「theory:主播:主題」。整理完成就清掉。 */
 export async function getCache(scope: string): Promise<Record<string, string>> {
   return (await area.get([`cache:${scope}`]))[`cache:${scope}`] ?? {}
 }
@@ -115,7 +120,14 @@ export async function getCache(scope: string): Promise<Record<string, string>> {
 export const saveCache = (scope: string, cache: Record<string, string> | null) =>
   cache ? area.set({ [`cache:${scope}`]: cache }) : area.remove([`cache:${scope}`])
 
-/** 一位博主的理論對位版，key 是主題 */
+/** 知識庫「可行動清單」裡勾掉的項目，用項目原文當識別：重新整合後文字沒變的仍保留勾選 */
+export async function getChecks(creator: string): Promise<string[]> {
+  return (await area.get([`checks:${creator}`]))[`checks:${creator}`] ?? []
+}
+
+export const saveChecks = (creator: string, items: string[]) => area.set({ [`checks:${creator}`]: items })
+
+/** 一位主播的理論對位版，key 是主題 */
 export async function getTheories(creator: string): Promise<Record<string, TheoryDoc>> {
   return (await area.get([`theory:${creator}`]))[`theory:${creator}`] ?? {}
 }
@@ -134,13 +146,13 @@ export async function deleteTheory(creator: string, topic: string) {
 export async function deleteCreator(creator: Creator) {
   const caches = Object.keys(await area.get(null))
     .filter((k) => k === `cache:kb:${creator.name}` || k.startsWith(`cache:theory:${creator.name}:`))
-  await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, `theory:${creator.name}`, ...caches,
+  await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, `theory:${creator.name}`, `checks:${creator.name}`, ...caches,
     ...creator.codes.map((c) => `post:${c}`)])
 }
 
 // —— 備份 ——
 // 金鑰不進備份：備份檔可能被傳出去。設定也不匯出，換電腦重填就好。
-const BACKUP_KEY = /^(creator|post|kb|theory):/
+const BACKUP_KEY = /^(creator|post|kb|theory|checks):/
 
 export async function exportAll() {
   const all = await area.get(null)
@@ -148,7 +160,7 @@ export async function exportAll() {
   return { app: 'brand-digest', version: 1, exportedAt: new Date().toISOString(), data }
 }
 
-/** 匯入備份。同一則貼文：本機已完成、備份沒完成就留本機的；博主的貼文清單取聯集。回傳匯入幾位博主。 */
+/** 匯入備份。同一則貼文：本機已完成、備份沒完成就留本機的；主播的貼文清單取聯集。回傳匯入幾位主播。 */
 export async function importAll(backup: unknown): Promise<number> {
   const b = backup as { app?: string; data?: Record<string, unknown> }
   if (b?.app !== 'brand-digest' || typeof b.data !== 'object' || !b.data)
@@ -164,6 +176,7 @@ export async function importAll(backup: unknown): Promise<number> {
       data[k] = { ...c, codes: [...new Set([...c.codes, ...(old as Creator).codes])] }
     }
     if (k.startsWith('theory:')) data[k] = { ...old, ...(v as object) }
+    if (k.startsWith('checks:')) data[k] = [...new Set([...(old as string[]), ...(v as string[])])]
   }
   await area.set(data)
   return Object.keys(data).filter((k) => k.startsWith('creator:')).length
@@ -171,7 +184,10 @@ export async function importAll(backup: unknown): Promise<number> {
 
 /** 主頁面用：儲存內容有變（例如背景程式收集到新貼文）就通知。 */
 export function onStoreChange(cb: () => void): () => void {
-  if (!globalThis.chrome?.storage) return () => {}
+  if (!globalThis.chrome?.storage) {
+    addEventListener(DEV_CHANGE, cb)
+    return () => removeEventListener(DEV_CHANGE, cb)
+  }
   const fn = () => cb()
   chrome.storage.onChanged.addListener(fn)
   return () => chrome.storage.onChanged.removeListener(fn)

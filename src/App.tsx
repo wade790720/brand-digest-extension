@@ -18,9 +18,12 @@ import { deleteCreator, getCreators, onStoreChange } from '@/lib/store'
 import { buildTheory } from '@/lib/theory'
 import type { Creator } from '@/types'
 
+type Task = (c: Creator, signal: AbortSignal, onProgress: (p: Progress) => void) => Promise<void>
+
 export interface Run {
   creator: string
   progress: Progress
+  startedAt: number // 這次萃取開始的時間：之後才完成的貼文會翻成精華卡
 }
 
 export default function App() {
@@ -31,6 +34,7 @@ export default function App() {
   const [run, setRun] = useState<Run | null>(null)
   const [stopped, setStopped] = useState<{ creator: string; reason: string } | null>(null) // 上次為什麼停下
   const abort = useRef<AbortController | null>(null)
+  const lastTask = useRef<{ task: Task; doneMsg: string } | null>(null) // 停下時「繼續」重跑它；每一步都有暫存，重跑就是接著做
 
   const reload = useCallback(() => getCreators().then(setCreators), [])
   useEffect(() => {
@@ -50,15 +54,17 @@ export default function App() {
 
   const current = creators.find((c) => c.name === selected)
 
-  /** 一次只跑一件事（萃取或理論對位），進度和停止原因都顯示在這位博主的頁面上 */
-  async function runTask(creator: Creator, task: (c: Creator, signal: AbortSignal, onProgress: (p: Progress) => void) => Promise<void>, doneMsg: string) {
+  /** 一次只跑一件事（萃取或理論對位），進度和停止原因都顯示在這位主播的頁面上 */
+  async function runTask(creator: Creator, task: Task, doneMsg: string) {
     if (run) return
+    lastTask.current = { task, doneMsg }
     const ctrl = new AbortController()
     abort.current = ctrl
     setStopped(null)
-    setRun({ creator: creator.name, progress: { done: 0, total: 0, status: '準備中…' } })
+    const startedAt = Date.now()
+    setRun({ creator: creator.name, progress: { done: 0, total: 0, status: '準備中…' }, startedAt })
     try {
-      await task(creator, ctrl.signal, (progress) => setRun({ creator: creator.name, progress }))
+      await task(creator, ctrl.signal, (progress) => setRun({ creator: creator.name, progress, startedAt }))
       if (!ctrl.signal.aborted) toast.success(doneMsg)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -87,9 +93,9 @@ export default function App() {
           brand-digest
         </button>
         <Separator />
-        <p className="px-4 pt-4 pb-2 text-xs text-muted-foreground">博主</p>
+        <p className="px-4 pt-4 pb-2 text-xs text-muted-foreground">主播</p>
         <ScrollArea className="min-h-0 flex-1 px-2">
-          {creators.length === 0 && <p className="px-2 py-1 text-sm text-muted-foreground">還沒有收集任何博主。</p>}
+          {creators.length === 0 && <p className="px-2 py-1 text-sm text-muted-foreground">還沒有收集任何主播。</p>}
           {creators.map((c) => (
             <div key={c.name} className="group flex items-center gap-1">
               <Button
@@ -108,7 +114,7 @@ export default function App() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem variant="destructive" onSelect={() => setToDelete(c)} disabled={run?.creator === c.name}>
-                    <Trash2 /> 刪除這位博主的資料
+                    <Trash2 /> 刪除這位主播的資料
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -130,6 +136,7 @@ export default function App() {
             creator={current}
             run={run}
             stopReason={stopped?.creator === current.name ? stopped.reason : undefined}
+            onRetry={() => lastTask.current && runTask(current, lastTask.current.task, lastTask.current.doneMsg)}
             onStart={(limit) => runTask(current, (c, signal, onProgress) => processCreator(c, signal, onProgress, limit),
               `${current.name} 的知識庫已更新`)}
             onTheory={(topic, sk) => runTask(current, (c, signal, onProgress) => buildTheory(c, topic, sk, signal, onProgress),
@@ -148,7 +155,7 @@ export default function App() {
           <DialogHeader>
             <DialogTitle>刪除 {toDelete?.name}？</DialogTitle>
             <DialogDescription>
-              會刪掉這位博主的 {toDelete?.codes.length} 則貼文、轉錄、萃取結果和知識庫，無法復原。
+              會刪掉這位主播的 {toDelete?.codes.length} 則貼文、轉錄、萃取結果和知識庫，無法復原。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

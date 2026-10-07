@@ -28,7 +28,7 @@ it('點開貼文不算離開；離開主頁再回來重新問', () => {
   expect(g.receive('coach', 'c')).toBe('ask')
 })
 
-it('換到別的博主，重新問', () => {
+it('換到別的主播，重新問', () => {
   const g = new ConsentGate<string>()
   g.receive('coach', 'a')
   g.accept()

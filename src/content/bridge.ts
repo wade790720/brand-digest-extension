@@ -78,7 +78,7 @@ function show(title: string, body: string, buttons: { label: string; primary: bo
     <p class="body"></p>
     <div class="row"></div>
   </div>`
-  root.querySelector('.title')!.textContent = title // 博主帳號用 textContent 放，不經過 innerHTML
+  root.querySelector('.title')!.textContent = title // 主播帳號用 textContent 放，不經過 innerHTML
   root.querySelector('.body')!.textContent = body
   for (const b of buttons) {
     const el = document.createElement('button')

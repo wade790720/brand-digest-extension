@@ -1,7 +1,7 @@
 /** 一則收集到的貼文。由背景程式寫入（收集），由主頁面補上轉錄與萃取（處理）。 */
 export interface Post {
   code: string // IG 貼文代碼，網址是 instagram.com/p/<code>/
-  creator: string // 博主帳號
+  creator: string // 主播帳號
   takenAt: number // 發文時間（Unix 秒）
   caption: string
   audioUrl?: string // 只有音軌的檔案（DASH），轉錄用；IG 的簽章網址幾天後會過期
@@ -11,6 +11,7 @@ export interface Post {
   transcript?: string
   digest?: Digest
   error?: string
+  processedAt?: number // 萃取完成的時間（毫秒），萃取中翻出精華卡用
 }
 
 /** 單則萃取結果。欄位名用英文，內容一律繁體中文。 */
@@ -48,7 +49,7 @@ export interface Theory {
   principles: { id: string; name: string }[]
 }
 
-/** 理論對位版：同一位博主的另一篇，一個主題一篇。骨架先存，產生完才有 markdown。 */
+/** 理論對位版：同一位主播的另一篇，一個主題一篇。骨架先存，產生完才有 markdown。 */
 export interface TheoryDoc {
   topic: string
   skeleton: Theory[]

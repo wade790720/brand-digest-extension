@@ -37,12 +37,12 @@ async function download(p: Post): Promise<Blob> {
   const url = p.audioUrl ?? p.videoUrl!
   const res = await fetch(url, { credentials: 'omit' }) // 不帶 IG 登入狀態
   if (res.status === 403 || res.status === 410)
-    throw new Error('影片連結已過期。回到博主主頁重新往下滑到這則，再按一次萃取。')
+    throw new Error('影片連結已過期。回到主播主頁重新往下滑到這則，再按一次萃取。')
   if (!res.ok) throw new Error(`下載失敗（HTTP ${res.status}）`)
   return res.blob()
 }
 
-/** 處理一位博主所有還沒完成的貼文：下載音軌 → 轉錄 → 萃取，最後整合成知識庫。
+/** 處理一位主播所有還沒完成的貼文：下載音軌 → 轉錄 → 萃取，最後整合成知識庫。
  *  金鑰錯誤、額度用完、重試後仍限流會停下整批（拋出 LlmError），停下前先用已完成的貼文整合知識庫；
  *  單則失敗只記在那一則，繼續下一則。 */
 export async function processCreator(creator: Creator, signal: AbortSignal, onProgress: (p: Progress) => void, limit?: number) {
@@ -76,10 +76,11 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
       })
       p.digest = toDigest(parseJson(raw))
       p.status = 'done'
+      p.processedAt = Date.now()
       p.error = undefined
     } catch (e) {
       // rate 到這裡代表重試完還是限流或過載：下一則多半一樣，停下來免得白白消耗每日額度
-      if (e instanceof LlmError && ['auth', 'quota', 'model', 'rate'].includes(e.kind)) {
+      if (e instanceof LlmError && ['auth', 'quota', 'model', 'rate', 'overload'].includes(e.kind)) {
         fatal = e
         break
       }

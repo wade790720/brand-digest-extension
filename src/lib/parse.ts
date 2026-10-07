@@ -2,7 +2,7 @@ import type { CollectMessage } from '@/types'
 
 type Item = Record<string, any>
 
-/** 目前頁面若是博主主頁（instagram.com/<帳號>/），回傳帳號；其他頁面回傳 null。
+/** 目前頁面若是主播主頁（instagram.com/<帳號>/），回傳帳號；其他頁面回傳 null。
  *  只在主頁收集：Reels 分頁的資料沒有影片與文案；首頁動態、探索頁是別人的貼文，不收。 */
 export function profileOf(pathname: string): string | null {
   const m = pathname.match(/^\/([A-Za-z0-9._]+)\/?$/)
@@ -22,7 +22,7 @@ export function audioUrlOf(manifest?: string): string | undefined {
   return undefined
 }
 
-/** 從 IG 頁面自己收到的 graphql 回應中，挑出這位博主的貼文。
+/** 從 IG 頁面自己收到的 graphql 回應中，挑出這位主播的貼文。
  *  回應格式不固定，所以遞迴找「有 code 和 media_type 的物件」。 */
 export function extractPosts(json: unknown, creator: string): CollectMessage | null {
   const items: Item[] = []
@@ -36,12 +36,14 @@ export function extractPosts(json: unknown, creator: string): CollectMessage | n
     for (const v of Object.values(it)) walk(v)
   })(json)
 
-  const mine = items.filter((it) => it.user.username.toLowerCase() === creator)
+  // 主播自己發的，加上合作貼文（發文者是別人、主播是共同作者）
+  const isCreator = (u: Item | undefined) => u?.username?.toLowerCase() === creator
+  const mine = items.filter((it) => [it.user, ...(it.coauthor_producers ?? []), ...(it.invited_coauthor_producers ?? [])].some(isCreator))
   if (!mine.length) return null
   return {
     type: 'collect',
     creator,
-    fullName: mine[0].user.full_name ?? '',
+    fullName: mine.find((it) => isCreator(it.user))?.user.full_name ?? '',
     posts: mine.map((it) => ({
       code: it.code,
       creator,

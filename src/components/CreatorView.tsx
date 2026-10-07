@@ -12,7 +12,8 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/
 import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { deleteTheory, getKnowledgeBase, getPosts, getTheories, onStoreChange } from '@/lib/store'
+import { deleteTheory, getChecks, getKnowledgeBase, getPosts, getTheories, onStoreChange, saveChecks } from '@/lib/store'
+import { taskKey, taskKeys } from '@/lib/tasks'
 import { download } from '@/lib/utils'
 import type { Creator, KnowledgeBase, Post, Theory, TheoryDoc } from '@/types'
 
@@ -21,6 +22,8 @@ const STATUS: Record<Post['status'], { label: string; variant: 'secondary' | 'de
   done: { label: '完成', variant: 'default' },
   error: { label: '失敗', variant: 'destructive' },
 }
+
+const VALUE: Record<'高' | '中' | '低', 'default' | 'secondary' | 'outline'> = { 高: 'default', 中: 'secondary', 低: 'outline' }
 
 const TRIAL = 10
 
@@ -58,11 +61,28 @@ function scrollToSource(article: HTMLElement, n: number) {
   li.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
-function Markdown({ text }: { text: string }) {
+/** tasks：可行動清單可以勾選。checked 是勾掉的項目原文 */
+function Markdown({ text, tasks }: { text: string; tasks?: { checked: Set<string>; toggle: (key: string) => void } }) {
+  const lines = text.split('\n') // linkCites 不改行數，所以能用行號對回原文
   return (
     <article className="prose prose-neutral max-w-none dark:prose-invert">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr]}
         components={{
+          // GFM 自帶的勾選框是停用的，換成自己的（見下面的 li）
+          input: ({ node: _node, ...props }) => (tasks && props.type === 'checkbox' ? null : <input {...props} />),
+          li: ({ node, className, children, ...props }) => {
+            const key = tasks && className?.includes('task-list-item') ? taskKey(lines[(node?.position?.start.line ?? 0) - 1]) : null
+            if (!tasks || !key) return <li className={className} {...props}>{children}</li>
+            const on = tasks.checked.has(key)
+            return (
+              <li className="list-none" {...props}>
+                <label className="-ml-6 flex cursor-pointer items-start gap-2">
+                  <input type="checkbox" className="mt-[0.45em] size-4 shrink-0 accent-primary" checked={on} onChange={() => tasks.toggle(key)} />
+                  <span className={on ? 'text-muted-foreground line-through [&_a]:text-muted-foreground [&_strong]:text-muted-foreground' : ''}>{children}</span>
+                </label>
+              </li>
+            )
+          },
           a: ({ href, node: _node, ...props }) => {
             const cite = href?.match(/^#src-(\d+)$/)
             if (!cite) return <a href={href} {...props} target="_blank" rel="noreferrer" />
@@ -78,10 +98,11 @@ function Markdown({ text }: { text: string }) {
   )
 }
 
-export function CreatorView({ creator, run, stopReason, onStart, onTheory, onStop }: {
+export function CreatorView({ creator, run, stopReason, onRetry, onStart, onTheory, onStop }: {
   creator: Creator
   run: Run | null
   stopReason?: string
+  onRetry: () => void
   onStart: (limit?: number) => void
   onTheory: (topic: string, skeleton: Theory[]) => void
   onStop: () => void
@@ -91,11 +112,13 @@ export function CreatorView({ creator, run, stopReason, onStart, onTheory, onSto
   const [theories, setTheories] = useState<TheoryDoc[]>([])
   const [tab, setTab] = useState('kb') // kb、posts，或 theory:<主題>
   const [dialogTopic, setDialogTopic] = useState<string | null>(null) // null＝對話框關著
+  const [checked, setChecked] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     setPosts(await getPosts(creator))
     setKb(await getKnowledgeBase(creator.name))
     setTheories(Object.values(await getTheories(creator.name)))
+    setChecked(new Set(await getChecks(creator.name)))
   }, [creator])
   useEffect(() => {
     load()
@@ -110,6 +133,20 @@ export function CreatorView({ creator, run, stopReason, onStart, onTheory, onSto
   const busyElsewhere = !!run && !mine
   // 還沒有知識庫又有很多則：建議先試幾則，幾分鐘內看到成果，再決定要不要全部做
   const trial = !kb && todo > TRIAL
+
+  const actions = kb ? taskKeys(kb.markdown) : []
+  const actionsDone = actions.filter((k) => checked.has(k)).length
+  function toggle(key: string) {
+    const next = new Set(checked)
+    if (!next.delete(key)) next.add(key)
+    setChecked(next)
+    saveChecks(creator.name, [...next])
+  }
+
+  // 這次萃取新完成的貼文，翻成精華卡（新的在前）
+  const fresh = mine ? posts.filter((p) => p.digest && (p.processedAt ?? 0) >= run!.startedAt)
+    .sort((a, b) => b.processedAt! - a.processedAt!) : []
+  const tally = (v: string) => fresh.filter((p) => p.digest!.value === v).length
 
   async function removeTheory(topic: string) {
     if (!confirm(`刪除「理論對位：${topic}」？刪掉後要重新產生。`)) return
@@ -136,6 +173,11 @@ export function CreatorView({ creator, run, stopReason, onStart, onTheory, onSto
             <Badge variant="outline">已收集 {posts.length} 則</Badge>
             <Badge variant="outline">已完成 {done}</Badge>
             {todo > 0 && <Badge variant="secondary">待處理 {todo}</Badge>}
+            {actions.length > 0 && (
+              <Badge variant={actionsDone === actions.length ? 'default' : 'outline'} title="知識庫「可行動清單」完成幾項">
+                行動 {actionsDone}/{actions.length}
+              </Badge>
+            )}
             <div className="ml-auto flex flex-wrap gap-2">
               {mine ? (
                 <Button variant="outline" onClick={onStop}><Square /> 停止</Button>
@@ -164,15 +206,38 @@ export function CreatorView({ creator, run, stopReason, onStart, onTheory, onSto
             </div>
           )}
           {!mine && posts.length > 0 && (
-            <p className="text-xs text-muted-foreground">想收集更多：回到她的 IG 主頁繼續往下滑，新貼文會自動加進來。</p>
+            <p className="text-xs text-muted-foreground">想收集更多：回到這位主播的 IG 主頁，在右下角按「收集」，再往下滑。</p>
           )}
         </CardContent>
       </Card>
 
+      {fresh.length > 0 && (
+        <section className="space-y-3" aria-label="這次萃取出的精華">
+          <p className="text-sm text-muted-foreground">
+            已翻出 {fresh.length} 張精華卡：含金量高 {tally('高')}、中 {tally('中')}、低 {tally('低')}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {fresh.slice(0, 6).map((p) => (
+              <div key={p.code} className={`essence-card space-y-2 rounded-xl border bg-card p-4 ${p.digest!.value === '高' ? 'border-primary/60' : ''}`}>
+                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>{date(p.takenAt)}</span>
+                  <Badge variant={VALUE[p.digest!.value]}>含金量 {p.digest!.value}</Badge>
+                </div>
+                <p className="line-clamp-2 font-medium">{p.digest!.topic}</p>
+                {p.digest!.points[0] && <p className="line-clamp-3 text-sm text-muted-foreground">{p.digest!.points[0]}</p>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {stopReason && !mine && (
         <Alert variant="destructive">
           <AlertTitle>中途停下，已完成的部分都有保存</AlertTitle>
-          <AlertDescription>{stopReason}</AlertDescription>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+            <span>{stopReason}</span>
+            <Button size="sm" variant="outline" onClick={onRetry} disabled={!!run}><Play /> 繼續</Button>
+          </AlertDescription>
         </Alert>
       )}
 
@@ -206,7 +271,7 @@ export function CreatorView({ creator, run, stopReason, onStart, onTheory, onSto
                   <Download /> 下載 Markdown
                 </Button>
               </div>
-              <Markdown text={kb.markdown} />
+              <Markdown text={kb.markdown} tasks={{ checked, toggle }} />
             </>
           ) : (
             <Empty>

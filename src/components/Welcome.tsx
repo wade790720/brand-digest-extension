@@ -24,7 +24,7 @@ function Step({ n, title, state, children }: { n: number; title: string; state: 
   )
 }
 
-/** 沒有選博主時顯示。第一次使用是三步引導：金鑰 → 收集 → 第一份知識庫；三步都完成後只提示從左邊選博主。 */
+/** 沒有選主播時顯示。第一次使用是三步引導：金鑰 → 收集 → 第一份知識庫；三步都完成後只提示從左邊選主播。 */
 export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect: (name: string) => void }) {
   const [hasKey, setHasKey] = useState<boolean>()
   const [hasKb, setHasKb] = useState(false)
@@ -62,8 +62,8 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
       <Empty className="h-full">
         <EmptyHeader>
           <EmptyMedia variant="icon"><BookOpen /></EmptyMedia>
-          <EmptyTitle>從左邊選一位博主</EmptyTitle>
-          <EmptyDescription>想加新的博主：到他的 IG 主頁往下滑，就會出現在左邊。</EmptyDescription>
+          <EmptyTitle>從左邊選一位主播</EmptyTitle>
+          <EmptyDescription>想加新的主播：到他的 IG 主頁往下滑，就會出現在左邊。</EmptyDescription>
         </EmptyHeader>
       </Empty>
     )
@@ -75,7 +75,7 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">三步做出第一份知識庫</h1>
         <p className="text-muted-foreground">
-          滑過博主的 IG 主頁，就把他的短影音整理成知識庫。不對 IG 多發任何請求，資料只存在你的電腦。
+          滑過主播的 IG 主頁，就把他的短影音整理成知識庫。不對 IG 多發任何請求，資料只存在你的電腦。
         </p>
       </header>
 
@@ -103,12 +103,12 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
               <p className="text-xs text-muted-foreground">金鑰只存在這台電腦的瀏覽器裡，只會送給 Groq。轉錄影片用它。</p>
             </Step>
 
-            <Step n={2} title="到 IG 收集一位博主" state={state(hasCreator, hasKey)}>
+            <Step n={2} title="到 IG 收集一位主播" state={state(hasCreator, hasKey)}>
               <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-                <li>在 Chrome 打開你想學的博主的<strong className="text-foreground">主頁</strong>（instagram.com/帳號），不是 Reels 分頁。</li>
+                <li>在 Chrome 打開你想學的主播的<strong className="text-foreground">主頁</strong>（instagram.com/帳號），不是 Reels 分頁。</li>
                 <li>右下角會問要不要收集，按「收集」。</li>
                 <li>往下滑，看到大約 10 則貼文就夠了。工具列的 brand-digest 圖示會顯示收集了幾則。</li>
-                <li>回到這個分頁，博主會自動出現在左邊。</li>
+                <li>回到這個分頁，主播會自動出現在左邊。</li>
               </ol>
               <Button variant="outline" asChild>
                 <a href="https://www.instagram.com/" target="_blank" rel="noreferrer">打開 Instagram <ExternalLink /></a>
@@ -116,7 +116,7 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
             </Step>
 
             <Step n={3} title="產生第一份知識庫（約 3 分鐘）" state={state(hasKb, hasKey && hasCreator)}>
-              <p className="text-sm text-muted-foreground">選一位博主，按「先試 10 則」。看過成果，再決定要不要全部萃取。</p>
+              <p className="text-sm text-muted-foreground">選一位主播，按「先試 10 則」。看過成果，再決定要不要全部萃取。</p>
               <div className="flex flex-wrap gap-2">
                 {creators.map((c) => (
                   <Button key={c.name} variant="outline" onClick={() => onSelect(c.name)}>

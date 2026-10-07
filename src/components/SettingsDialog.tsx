@@ -64,7 +64,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     if (!file) return
     try {
       const n = await importAll(JSON.parse(await file.text()))
-      toast.success(`已匯入 ${n} 位博主的資料`)
+      toast.success(`已匯入 ${n} 位主播的資料`)
     } catch (e) {
       toast.error(e instanceof SyntaxError ? '檔案格式不對，請選匯出的 .json 備份檔。' : e instanceof Error ? e.message : String(e))
     } finally {

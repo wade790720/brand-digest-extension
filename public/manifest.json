@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "brand-digest",
-  "description": "滑過博主的 IG 主頁，就把他的短影音整理成知識庫。不對 IG 多發請求。",
+  "description": "滑過主播的 IG 主頁，就把他的短影音整理成知識庫。",
   "version": "0.1.0",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "unlimitedStorage"],

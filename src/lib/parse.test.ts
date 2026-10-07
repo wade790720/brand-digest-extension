@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { audioUrlOf, extractPosts, profileOf } from './parse'
 
-// 結構照 2026-10 實際觀察到的博主主頁 graphql 回應（網址為假）
+// 結構照 2026-10 實際觀察到的主播主頁 graphql 回應（網址為假）
 const manifest =
   '<MPD><Period><AdaptationSet contentType="video"><Representation codecs="vp09"><BaseURL>https://cdn/v.mp4?a=1&amp;b=2</BaseURL></Representation></AdaptationSet>' +
   '<AdaptationSet contentType="audio"><Representation codecs="mp4a"><BaseURL>https://cdn/a.mp4?x=1&amp;y=2</BaseURL></Representation></AdaptationSet></Period></MPD>'
@@ -19,7 +19,7 @@ const response = {
 }
 
 describe('profileOf', () => {
-  it('只認博主主頁', () => {
+  it('只認主播主頁', () => {
     expect(profileOf('/Coach/')).toBe('coach')
     expect(profileOf('/coach')).toBe('coach')
     expect(profileOf('/coach/reels/')).toBeNull()
@@ -34,12 +34,23 @@ describe('audioUrlOf', () => {
 })
 
 describe('extractPosts', () => {
-  it('只收這位博主的貼文，帶出文案、時間、音軌', () => {
+  it('只收這位主播的貼文，帶出文案、時間、音軌', () => {
     const msg = extractPosts(response, 'coach')!
     expect(msg.fullName).toBe('教練')
     expect(msg.posts.map((p) => p.code)).toEqual(['AAA', 'BBB'])
     expect(msg.posts[0]).toMatchObject({ caption: '開場三秒', takenAt: 100, audioUrl: 'https://cdn/a.mp4?x=1&y=2' })
     expect(msg.posts[1]).toMatchObject({ caption: '', audioUrl: undefined })
   })
-  it('沒有這位博主的貼文就回 null', () => expect(extractPosts(response, 'nobody')).toBeNull())
+  it('沒有這位主播的貼文就回 null', () => expect(extractPosts(response, 'nobody')).toBeNull())
+})
+
+it('合作貼文：發文者是別人、主播是共同作者，也要收', () => {
+  const collab = { data: { items: [
+    { code: 'COL', media_type: 2, taken_at: 50, user: { username: 'partner' }, coauthor_producers: [{ username: 'Coach' }] },
+    { code: 'OWN', media_type: 1, taken_at: 40, user: { username: 'coach', full_name: '教練' } },
+    { code: 'OTHER', media_type: 1, user: { username: 'partner' }, coauthor_producers: [] },
+  ] } }
+  const msg = extractPosts(collab, 'coach')!
+  expect(msg.posts.map((p) => p.code)).toEqual(['COL', 'OWN'])
+  expect(msg.fullName).toBe('教練') // 名稱取主播自己發的那則，不取合作者的
 })
