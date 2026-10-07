@@ -22,6 +22,8 @@ const STATUS: Record<Post['status'], { label: string; variant: 'secondary' | 'de
   error: { label: '失敗', variant: 'destructive' },
 }
 
+const TRIAL = 10
+
 const date = (sec: number) => (sec ? new Date(sec * 1000).toLocaleDateString('zh-TW') : '')
 
 // AI 常在表格裡用 <br> 換行。只把 <br> 換成真的換行；其他 HTML 照舊當純文字顯示，不執行 AI 產生的 HTML
@@ -80,7 +82,7 @@ export function CreatorView({ creator, run, stopReason, onStart, onTheory, onSto
   creator: Creator
   run: Run | null
   stopReason?: string
-  onStart: () => void
+  onStart: (limit?: number) => void
   onTheory: (topic: string, skeleton: Theory[]) => void
   onStop: () => void
 }) {
@@ -106,6 +108,8 @@ export function CreatorView({ creator, run, stopReason, onStart, onTheory, onSto
   const todo = posts.length - done
   const mine = run?.creator === creator.name
   const busyElsewhere = !!run && !mine
+  // 還沒有知識庫又有很多則：建議先試幾則，幾分鐘內看到成果，再決定要不要全部做
+  const trial = !kb && todo > TRIAL
 
   async function removeTheory(topic: string) {
     if (!confirm(`刪除「理論對位：${topic}」？刪掉後要重新產生。`)) return
@@ -132,11 +136,18 @@ export function CreatorView({ creator, run, stopReason, onStart, onTheory, onSto
             <Badge variant="outline">已收集 {posts.length} 則</Badge>
             <Badge variant="outline">已完成 {done}</Badge>
             {todo > 0 && <Badge variant="secondary">待處理 {todo}</Badge>}
-            <div className="ml-auto">
+            <div className="ml-auto flex flex-wrap gap-2">
               {mine ? (
                 <Button variant="outline" onClick={onStop}><Square /> 停止</Button>
+              ) : trial ? (
+                <>
+                  <Button variant="outline" onClick={() => onStart()} disabled={busyElsewhere}>全部萃取（{todo} 則）</Button>
+                  <Button onClick={() => onStart(TRIAL)} disabled={busyElsewhere}>
+                    <Play /> 先試 {TRIAL} 則（約 3 分鐘）
+                  </Button>
+                </>
               ) : (
-                <Button onClick={onStart} disabled={busyElsewhere || posts.length === 0}>
+                <Button onClick={() => onStart()} disabled={busyElsewhere || posts.length === 0}>
                   <Play /> {todo > 0 ? `開始萃取（${todo} 則）` : '重新整合知識庫'}
                 </Button>
               )}

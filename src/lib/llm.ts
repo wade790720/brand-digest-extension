@@ -184,3 +184,14 @@ export function parseJson(raw: string): any {
   }
   return null
 }
+
+/** 驗證 Groq 金鑰：讀模型清單，不用額度。可以用回傳 null，不行回傳給使用者看的原因。 */
+export async function checkGroqKey(key: string): Promise<string | null> {
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/models', { headers: { authorization: `Bearer ${key}` } })
+    if (res.ok) return null
+    return res.status === 401 ? '金鑰不對。請回到 Groq 重新複製一次，開頭應該是 gsk_。' : `Groq 回應錯誤（HTTP ${res.status}），請稍後再試。`
+  } catch {
+    return '連不上 Groq，請確認網路連線。'
+  }
+}

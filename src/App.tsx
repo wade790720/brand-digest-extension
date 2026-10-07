@@ -14,7 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { LlmError } from '@/lib/llm'
 import { processCreator, type Progress } from '@/lib/pipeline'
-import { deleteCreator, getCreators, getSettings, onStoreChange } from '@/lib/store'
+import { deleteCreator, getCreators, onStoreChange } from '@/lib/store'
 import { buildTheory } from '@/lib/theory'
 import type { Creator } from '@/types'
 
@@ -40,11 +40,6 @@ export default function App() {
     return onStoreChange(() => (clearTimeout(t), (t = setTimeout(reload, 400))))
   }, [reload])
 
-  // 第一次使用：還沒填 Groq 金鑰就先打開設定
-  useEffect(() => {
-    getSettings().then((s) => !s.keys.groq && setSettingsOpen(true))
-  }, [])
-
   // 處理中離開頁面會中斷，提醒使用者
   useEffect(() => {
     if (!run) return
@@ -56,7 +51,7 @@ export default function App() {
   const current = creators.find((c) => c.name === selected)
 
   /** 一次只跑一件事（萃取或理論對位），進度和停止原因都顯示在這位博主的頁面上 */
-  async function runTask(creator: Creator, task: typeof processCreator, doneMsg: string) {
+  async function runTask(creator: Creator, task: (c: Creator, signal: AbortSignal, onProgress: (p: Progress) => void) => Promise<void>, doneMsg: string) {
     if (run) return
     const ctrl = new AbortController()
     abort.current = ctrl
@@ -135,13 +130,14 @@ export default function App() {
             creator={current}
             run={run}
             stopReason={stopped?.creator === current.name ? stopped.reason : undefined}
-            onStart={() => runTask(current, processCreator, `${current.name} 的知識庫已更新`)}
+            onStart={(limit) => runTask(current, (c, signal, onProgress) => processCreator(c, signal, onProgress, limit),
+              `${current.name} 的知識庫已更新`)}
             onTheory={(topic, sk) => runTask(current, (c, signal, onProgress) => buildTheory(c, topic, sk, signal, onProgress),
               `理論對位：${topic} 已產生`)}
             onStop={() => abort.current?.abort()}
           />
         ) : (
-          <Welcome hasCreators={creators.length > 0} />
+          <Welcome creators={creators} onSelect={setSelected} />
         )}
       </main>
 

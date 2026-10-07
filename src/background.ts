@@ -19,6 +19,11 @@ chrome.runtime.onMessage.addListener((msg: CollectMessage, sender) => {
     .catch((err) => console.error('收集失敗', err))
 })
 
+// 第一次安裝就打開主頁面，直接看到三步引導。更新、重新載入不打開，免得打擾已經在用的人
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  if (reason === chrome.runtime.OnInstalledReason.INSTALL) chrome.tabs.create({ url: chrome.runtime.getURL('app.html') })
+})
+
 // 只開一個主頁面：開著就切過去
 chrome.action.onClicked.addListener(async () => {
   const url = chrome.runtime.getURL('app.html')

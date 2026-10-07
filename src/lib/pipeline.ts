@@ -45,11 +45,11 @@ async function download(p: Post): Promise<Blob> {
 /** 處理一位博主所有還沒完成的貼文：下載音軌 → 轉錄 → 萃取，最後整合成知識庫。
  *  金鑰錯誤、額度用完、重試後仍限流會停下整批（拋出 LlmError），停下前先用已完成的貼文整合知識庫；
  *  單則失敗只記在那一則，繼續下一則。 */
-export async function processCreator(creator: Creator, signal: AbortSignal, onProgress: (p: Progress) => void) {
+export async function processCreator(creator: Creator, signal: AbortSignal, onProgress: (p: Progress) => void, limit?: number) {
   const settings = await getSettings()
   if (!settings.keys.groq) throw new LlmError('轉錄需要 Groq 金鑰（免費），請先到設定填寫。', 'auth')
   const posts = await getPosts(creator)
-  const todo = posts.filter((p) => p.status !== 'done')
+  const todo = posts.filter((p) => p.status !== 'done').slice(0, limit) // limit：第一次先試幾則，快點看到成果
   const report = (done: number, status: string) => onProgress({ done, total: todo.length, status })
   let fatal: LlmError | undefined
 
