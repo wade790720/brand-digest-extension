@@ -75,7 +75,7 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">三步做出第一份知識庫</h1>
         <p className="text-muted-foreground">
-          滑過主播的 IG 主頁，就把他的短影音整理成知識庫。不對 IG 多發任何請求，資料只存在你的電腦。
+          滑過主播的 IG 主頁，就把他的短影音整理成知識庫。不對 IG 多發任何請求，資料只存在你的電腦；只有錯誤報告（不含你的資料）會傳給開發者，可在設定關閉。
         </p>
       </header>
 

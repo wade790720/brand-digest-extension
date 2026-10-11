@@ -6,7 +6,6 @@ import './index.css'
 import App from './App.tsx'
 import { MembershipGate } from '@/components/MembershipGate'
 import { captureErrors } from '@/lib/error-log'
-import { ErrorReportingPrompt } from '@/components/ReportProblem'
 
 captureErrors('brand-digest')
 
@@ -21,7 +20,6 @@ createRoot(document.getElementById('root')!).render(
     <TooltipProvider>
       <MembershipGate><App /></MembershipGate>
       <Toaster richColors position="bottom-right" />
-      <ErrorReportingPrompt />
     </TooltipProvider>
   </StrictMode>,
 )
