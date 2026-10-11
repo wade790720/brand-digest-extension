@@ -88,7 +88,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-background text-foreground">
-      <aside className="flex w-64 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
+      <aside className="flex w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
         <button className="flex h-12 items-center gap-2 px-3 text-left" onClick={() => setSelected(null)}>
           <span className="grid size-6 place-items-center rounded-md brand-mark text-[10px] font-semibold" aria-hidden="true">BD</span>
           <span className="font-semibold text-foreground">brand-digest</span>
