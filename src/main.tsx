@@ -5,6 +5,9 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import './index.css'
 import App from './App.tsx'
 import { MembershipGate } from '@/components/MembershipGate'
+import { captureErrors } from '@/lib/error-log'
+
+captureErrors()
 
 // 跟著系統切換深色模式（shadcn 的主題用 .dark class）
 const dark = window.matchMedia('(prefers-color-scheme: dark)')

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ReportProblem } from '@/components/ReportProblem'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
@@ -153,6 +154,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload /> 匯入備份</Button>
             <input ref={fileRef} type="file" accept=".json,application/json" hidden
               onChange={(e) => importBackup(e.target.files?.[0])} />
+            <ReportProblem />
           </div>
         </div>
 
