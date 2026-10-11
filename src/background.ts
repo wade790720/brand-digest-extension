@@ -12,7 +12,7 @@ chrome.runtime.onMessage.addListener((msg: CollectMessage, sender) => {
   queue = queue
     .then(() => mergeCollected(msg.creator, msg.fullName, msg.posts))
     .then(({ total }) => {
-      chrome.action.setBadgeBackgroundColor({ tabId, color: '#7c3aed' })
+      chrome.action.setBadgeBackgroundColor({ tabId, color: '#6e56cf' })
       chrome.action.setBadgeText({ tabId, text: String(total) })
       chrome.action.setTitle({ tabId, title: `brand-digest：已收集 ${msg.creator} 的 ${total} 則貼文` })
     })

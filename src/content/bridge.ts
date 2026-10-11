@@ -61,16 +61,16 @@ function show(title: string, body: string, buttons: { label: string; primary: bo
       animation: in 200ms ease-out; }
     @keyframes in { from { opacity: 0; transform: translateY(8px); } }
     @media (prefers-reduced-motion: reduce) { .box { animation: none; } }
-    .brand { font-size: 12px; color: #a78bfa; font-weight: 600; }
+    .brand { font-size: 12px; color: #baa7ff; font-weight: 600; }
     .title { margin: 2px 0 4px; font-weight: 600; }
     .body { margin: 0; color: #a1a1aa; font-size: 13px; }
     .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
     .row:empty { display: none; }
     button { font: inherit; font-weight: 600; padding: 6px 14px; border-radius: 8px; cursor: pointer;
       border: 1px solid rgb(255 255 255 / 15%); background: transparent; color: #fafafa; }
-    button.primary { background: #7c3aed; border-color: #7c3aed; }
+    button.primary { background: #6e56cf; border-color: #6e56cf; }
     button:hover { filter: brightness(1.15); }
-    button:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
+    button:focus-visible { outline: 2px solid #baa7ff; outline-offset: 2px; }
   </style>
   <div class="box" role="region" aria-live="polite" aria-label="brand-digest">
     <div class="brand">brand-digest</div>

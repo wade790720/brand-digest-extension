@@ -13,7 +13,7 @@ function Step({ n, title, state, children }: { n: number; title: string; state: 
   return (
     <li className={`flex gap-4 ${state === 'later' ? 'opacity-50' : ''}`}>
       <span className={`flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-        state === 'done' ? 'bg-primary text-primary-foreground' : 'border-2 border-primary text-primary'}`}>
+        state === 'done' ? 'bg-primary text-primary-foreground' : 'border-2 border-primary text-primary-text'}`}>
         {state === 'done' ? <Check className="size-4" /> : n}
       </span>
       <div className="min-w-0 flex-1 space-y-3 pt-1">
