@@ -6,8 +6,9 @@ import './index.css'
 import App from './App.tsx'
 import { MembershipGate } from '@/components/MembershipGate'
 import { captureErrors } from '@/lib/error-log'
+import { ErrorReportingPrompt } from '@/components/ReportProblem'
 
-captureErrors()
+captureErrors('brand-digest')
 
 // 跟著系統切換深色模式（shadcn 的主題用 .dark class）
 const dark = window.matchMedia('(prefers-color-scheme: dark)')
@@ -20,6 +21,7 @@ createRoot(document.getElementById('root')!).render(
     <TooltipProvider>
       <MembershipGate><App /></MembershipGate>
       <Toaster richColors position="bottom-right" />
+      <ErrorReportingPrompt />
     </TooltipProvider>
   </StrictMode>,
 )
