@@ -4,6 +4,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import './index.css'
 import App from './App.tsx'
+import { MembershipGate } from '@/components/MembershipGate'
 
 // 跟著系統切換深色模式（shadcn 的主題用 .dark class）
 const dark = window.matchMedia('(prefers-color-scheme: dark)')
@@ -14,7 +15,7 @@ dark.addEventListener('change', applyTheme)
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <TooltipProvider>
-      <App />
+      <MembershipGate><App /></MembershipGate>
       <Toaster richColors position="bottom-right" />
     </TooltipProvider>
   </StrictMode>,
