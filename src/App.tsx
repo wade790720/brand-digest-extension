@@ -90,7 +90,7 @@ export default function App() {
     <div className="flex h-screen bg-background text-foreground">
       <aside className="flex w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
         <button className="flex h-12 items-center gap-2 px-3 text-left" onClick={() => setSelected(null)}>
-          <span className="grid size-6 place-items-center rounded-md brand-mark text-[10px] font-semibold" aria-hidden="true">BD</span>
+          <img src="/icons/icon-48.png" alt="" className="size-6 rounded-md" />
           <span className="font-semibold text-foreground">Instagram 創作者精選</span>
         </button>
         <Separator />
