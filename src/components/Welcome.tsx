@@ -107,7 +107,7 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
               <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
                 <li>在 Chrome 打開你想學的主播的<strong className="text-foreground">主頁</strong>（instagram.com/帳號），不是 Reels 分頁。</li>
                 <li>右下角會問要不要收集，按「收集」。</li>
-                <li>往下滑，看到大約 10 則貼文就夠了。工具列的 brand-digest 圖示會顯示收集了幾則。</li>
+                <li>往下滑，看到大約 10 則貼文就夠了。工具列的 Instagram 創作者精選 圖示會顯示收集了幾則。</li>
                 <li>回到這個分頁，主播會自動出現在左邊。</li>
               </ol>
               <Button variant="outline" asChild>

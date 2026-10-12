@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "brand-digest",
-  "description": "滑過主播的 IG 主頁，就把他的短影音整理成知識庫。",
+  "name": "__MSG_appName__",
+  "description": "__MSG_appDesc__",
+  "default_locale": "en",
   "version": "0.2.0",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "unlimitedStorage"],
@@ -19,5 +20,5 @@
     { "matches": ["https://www.instagram.com/*"], "js": ["main-world.js"], "run_at": "document_start", "world": "MAIN" },
     { "matches": ["https://www.instagram.com/*"], "js": ["bridge.js"], "run_at": "document_start" }
   ],
-  "action": { "default_title": "brand-digest" }
+  "action": { "default_title": "__MSG_appName__" }
 }

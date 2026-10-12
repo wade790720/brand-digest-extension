@@ -164,7 +164,7 @@ export async function exportAll() {
 export async function importAll(backup: unknown): Promise<number> {
   const b = backup as { app?: string; data?: Record<string, unknown> }
   if (b?.app !== 'brand-digest' || typeof b.data !== 'object' || !b.data)
-    throw new Error('這不是 brand-digest 的備份檔。')
+    throw new Error('這不是 Instagram 創作者精選 的備份檔。')
   const data = Object.fromEntries(Object.entries(b.data).filter(([k]) => BACKUP_KEY.test(k)))
   const local = await area.get(Object.keys(data))
   for (const [k, v] of Object.entries(data)) {

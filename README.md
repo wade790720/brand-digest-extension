@@ -1,4 +1,4 @@
-# brand-digest
+# Instagram 創作者精選（Creator Digest for Instagram）
 
 ![Chrome 116+](https://img.shields.io/badge/Chrome-116%2B-4285F4?logo=googlechrome&logoColor=white)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-34A853)
@@ -7,6 +7,8 @@
 ![Tailwind CSS 4](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
 
 滑過主播的 IG 主頁，就把他的短影音整理成知識庫的 Chrome 擴充功能。
+
+商店名稱是 Creator Digest for Instagram（繁體中文介面顯示「Instagram 創作者精選」）。repo 名稱是 brand-digest-extension，程式內部代號仍用 brand-digest。
 
 ## 目錄
 
@@ -23,7 +25,7 @@
 
 ## 背景
 
-短影音主播的知識散在幾百支影片裡，一支一支看很花時間。brand-digest 把影片轉成文字，萃取重點，再跨篇整合成一份知識庫。
+短影音主播的知識散在幾百支影片裡，一支一支看很花時間。Instagram 創作者精選把影片轉成文字，萃取重點，再跨篇整合成一份知識庫。
 
 這是 Python 版 brand-digest 的瀏覽器版本。Python 版用 instaloader 登入帳號，直接向 IG 發請求抓貼文，帳號容易被 IG 限制。擴充功能改用「旁聽」：
 
@@ -71,9 +73,9 @@ Windows、macOS、Linux 的步驟都一樣。
 
 3. Chrome 網址列輸入 `chrome://extensions`，打開右上角的「開發人員模式」。
 4. 按「載入未封裝項目」，選 `dist` 資料夾。
-5. 點工具列的 brand-digest 圖示。第一次開啟會跳出設定，填入 Groq 金鑰。
+5. 點工具列的 Instagram 創作者精選 圖示。第一次開啟會跳出設定，填入 Groq 金鑰。
 
-改了程式碼之後，執行 `npm run build`，再到 `chrome://extensions` 按 brand-digest 的重新載入。
+改了程式碼之後，執行 `npm run build`，再到 `chrome://extensions` 按 Instagram 創作者精選 的重新載入。
 
 ## 使用
 
@@ -132,7 +134,7 @@ Windows、macOS、Linux 的步驟都一樣。
 IG 的影片網址幾天後會過期。回到主播主頁重新滑到那則，網址就會更新，再按一次「開始萃取」。
 
 **IG 主播主頁顯示「發生錯誤，無法載入頁面」**
-先在 `chrome://extensions` 關掉 brand-digest，重新整理頁面。關掉後還是錯誤，代表是 IG 那邊的問題。用無痕視窗打開正常，代表 IG 暫時限制了你的帳號，等 1–2 天通常會解除。
+先在 `chrome://extensions` 關掉 Instagram 創作者精選，重新整理頁面。關掉後還是錯誤，代表是 IG 那邊的問題。用無痕視窗打開正常，代表 IG 暫時限制了你的帳號，等 1–2 天通常會解除。
 
 ## 開發
 

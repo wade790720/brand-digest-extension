@@ -14,7 +14,7 @@ chrome.runtime.onMessage.addListener((msg: CollectMessage, sender) => {
     .then(({ total }) => {
       chrome.action.setBadgeBackgroundColor({ tabId, color: '#6e56cf' })
       chrome.action.setBadgeText({ tabId, text: String(total) })
-      chrome.action.setTitle({ tabId, title: `brand-digest：已收集 ${msg.creator} 的 ${total} 則貼文` })
+      chrome.action.setTitle({ tabId, title: `Instagram 創作者精選：已收集 ${msg.creator} 的 ${total} 則貼文` })
     })
     .catch((err) => console.error('收集失敗', err))
 })

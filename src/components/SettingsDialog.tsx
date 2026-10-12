@@ -58,7 +58,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
   async function exportBackup() {
     const day = new Date().toLocaleDateString('sv') // YYYY-MM-DD
-    download(`brand-digest-備份-${day}.json`, JSON.stringify(await exportAll()), 'application/json')
+    download(`creator-digest-備份-${day}.json`, JSON.stringify(await exportAll()), 'application/json')
   }
 
   async function importBackup(file: File | undefined) {

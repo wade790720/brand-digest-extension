@@ -34,8 +34,8 @@ async function ask(creator: string) {
   show(
     known ? `要繼續收集「${creator}」的新貼文嗎？` : `要收集「${creator}」的貼文嗎？`,
     known
-      ? `已收集 ${known.codes.length} 則。按「收集」後，這次往下滑看到的新貼文會加進 brand-digest。`
-      : '按「收集」後，這次往下滑看到的貼文會存進 brand-digest，之後可以整理成知識庫。',
+      ? `已收集 ${known.codes.length} 則。按「收集」後，這次往下滑看到的新貼文會加進 Instagram 創作者精選。`
+      : '按「收集」後，這次往下滑看到的貼文會存進 Instagram 創作者精選，之後可以整理成知識庫。',
     [
       { label: '取消', primary: false, onClick: () => (gate.decline(), hide()) },
       {
@@ -72,8 +72,8 @@ function show(title: string, body: string, buttons: { label: string; primary: bo
     button:hover { filter: brightness(1.15); }
     button:focus-visible { outline: 2px solid #baa7ff; outline-offset: 2px; }
   </style>
-  <div class="box" role="region" aria-live="polite" aria-label="brand-digest">
-    <div class="brand">brand-digest</div>
+  <div class="box" role="region" aria-live="polite" aria-label="Instagram 創作者精選">
+    <div class="brand">Instagram 創作者精選</div>
     <p class="title"></p>
     <p class="body"></p>
     <div class="row"></div>
