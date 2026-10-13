@@ -98,11 +98,12 @@ function Markdown({ text, tasks }: { text: string; tasks?: { checked: Set<string
   )
 }
 
-export function CreatorView({ creator, run, stopReason, onRetry, onStart, onTheory, onStop }: {
+export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onStart, onTheory, onStop }: {
   creator: Creator
   run: Run | null
   stopReason?: string
   onRetry: () => void
+  onDelete: () => void
   onStart: (limit?: number) => void
   onTheory: (topic: string, skeleton: Theory[]) => void
   onStop: () => void
@@ -156,15 +157,21 @@ export function CreatorView({ creator, run, stopReason, onRetry, onStart, onTheo
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-8">
-      <header>
-        <h1 className="text-2xl font-semibold">{creator.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          {creator.fullName && `${creator.fullName} · `}
-          <a className="inline-flex items-center gap-1 underline-offset-4 hover:underline"
-            href={`https://www.instagram.com/${creator.name}/`} target="_blank" rel="noreferrer">
-            instagram.com/{creator.name} <ExternalLink className="size-3" />
-          </a>
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold">{creator.name}</h1>
+          <p className="text-sm text-muted-foreground">
+            {creator.fullName && `${creator.fullName} · `}
+            <a className="inline-flex items-center gap-1 underline-offset-4 hover:underline"
+              href={`https://www.instagram.com/${creator.name}/`} target="_blank" rel="noreferrer">
+              instagram.com/{creator.name} <ExternalLink className="size-3" />
+            </a>
+          </p>
+        </div>
+        {/* 處理中不能刪：會刪到正在寫入的資料 */}
+        <Button variant="ghost" size="sm" className="shrink-0 text-destructive hover:text-destructive" onClick={onDelete} disabled={mine}>
+          <Trash2 /> 刪除
+        </Button>
       </header>
 
       <Card>

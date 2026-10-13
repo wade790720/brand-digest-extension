@@ -4,16 +4,15 @@ import { toast } from 'sonner'
 import { CreatorView } from '@/components/CreatorView'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { Welcome } from '@/components/Welcome'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { LlmError } from '@/lib/llm'
 import { processCreator, type Progress } from '@/lib/pipeline'
+import { cn } from '@/lib/utils'
 import { deleteCreator, getCreators, onStoreChange } from '@/lib/store'
 import { buildTheory } from '@/lib/theory'
 import type { Creator } from '@/types'
@@ -95,33 +94,38 @@ export default function App() {
         </button>
         <Separator />
         <p className="px-4 pt-4 pb-2 text-xs text-muted-foreground">主播</p>
-        <ScrollArea className="min-h-0 flex-1 px-2">
+        {/* 原生捲動：Radix ScrollArea 內層是 display: table，會把整列撐寬，右邊的「⋯」選單被切掉 */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-2">
           {creators.length === 0 && <p className="px-2 py-1 text-sm text-muted-foreground">還沒有收集任何主播。</p>}
-          {creators.map((c) => (
-            <div key={c.name} className="group flex items-center gap-1">
-              <Button
-                variant={c.name === selected ? 'secondary' : 'ghost'}
-                className="min-w-0 flex-1 justify-between"
-                onClick={() => setSelected(c.name)}
-              >
-                <span className="truncate">{c.name}</span>
-                <Badge variant="outline">{c.codes.length}</Badge>
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label={`${c.name} 的更多選項`}>
-                    <MoreHorizontal />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem variant="destructive" onSelect={() => setToDelete(c)} disabled={run?.creator === c.name}>
-                    <Trash2 /> 刪除這位主播的資料
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          ))}
-        </ScrollArea>
+          {creators.map((c) => {
+            const on = c.name === selected
+            // 「⋯」平常隱藏，滑過、鍵盤移到這列、選中或選單開著時才出現，出現時蓋住則數（同 Instagram 整理師）
+            return (
+              <div key={c.name} className={cn('group relative flex items-center rounded-md', on ? 'bg-accent' : 'hover:bg-accent/60')}>
+                <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 py-1.5 text-left text-sm"
+                  aria-current={on ? 'page' : undefined} onClick={() => setSelected(c.name)}>
+                  <span className={cn('truncate', on && 'font-medium')}>{c.name}</span>
+                  <span className={cn('shrink-0 text-xs text-muted-foreground tabular-nums group-focus-within:invisible group-hover:invisible', on && 'invisible')}>
+                    {c.codes.length}
+                  </span>
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon-xs" aria-label={`${c.name} 的更多選項`}
+                      className={cn('absolute right-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100', on && 'opacity-100')}>
+                      <MoreHorizontal />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem variant="destructive" onSelect={() => setToDelete(c)} disabled={run?.creator === c.name}>
+                      <Trash2 /> 刪除
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )
+          })}
+        </div>
         <Separator />
         <div className="p-2">
           <Button variant="ghost" className="w-full justify-start" onClick={() => setSettingsOpen(true)}>
@@ -137,6 +141,7 @@ export default function App() {
             creator={current}
             run={run}
             stopReason={stopped?.creator === current.name ? stopped.reason : undefined}
+            onDelete={() => setToDelete(current)}
             onRetry={() => lastTask.current && runTask(current, lastTask.current.task, lastTask.current.doneMsg)}
             onStart={(limit) => runTask(current, (c, signal, onProgress) => processCreator(c, signal, onProgress, limit),
               `${current.name} 的知識庫已更新`)}
