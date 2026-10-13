@@ -1,8 +1,14 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-/* Shared brand tokens (copy of Documents/Codex/brand-guidelines/brand.css). Change colors there, not here. */
+/* Shared brand tokens (copy of Documents/Codex/brand-guidelines/brand.css). Change layout, spacing and type there,
+   not here. The only thing this product overrides is the accent, right below. */
 @import "./brand.css";
+
+/* 強調色：對應橘色球體圖示（brand.css 的紫色是 Sai 的）。
+   對比：白字在 #c24700 上 5.0:1；#c24700 當文字在淺色背景上 4.8:1；#ff801f 在深色背景上 7.8:1 */
+:root { --primary: #c24700; --ring: #c24700; --primary-text: #c24700; }
+.dark { --ring: #ff801f; --primary-text: #ff801f; }
 
 @plugin "@tailwindcss/typography";
 

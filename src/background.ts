@@ -12,7 +12,7 @@ chrome.runtime.onMessage.addListener((msg: CollectMessage, sender) => {
   queue = queue
     .then(() => mergeCollected(msg.creator, msg.fullName, msg.posts))
     .then(({ total }) => {
-      chrome.action.setBadgeBackgroundColor({ tabId, color: '#6e56cf' })
+      chrome.action.setBadgeBackgroundColor({ tabId, color: '#c24700' }) // Chrome API 只收色碼：同 index.css 的 --primary
       chrome.action.setBadgeText({ tabId, text: String(total) })
       chrome.action.setTitle({ tabId, title: `Instagram 創作者精選：已收集 ${msg.creator} 的 ${total} 則貼文` })
     })

@@ -61,16 +61,18 @@ function show(title: string, body: string, buttons: { label: string; primary: bo
       animation: in 200ms ease-out; }
     @keyframes in { from { opacity: 0; transform: translateY(8px); } }
     @media (prefers-reduced-motion: reduce) { .box { animation: none; } }
-    .brand { font-size: 12px; color: #baa7ff; font-weight: 600; }
+    /* IG 頁面上不能載入 brand.css：強調色在這裡定義一次，同 index.css 的 --primary 與深色的 --primary-text（提示框固定深色底） */
+    .box { --primary: #c24700; --primary-text: #ff801f; }
+    .brand { font-size: 12px; color: var(--primary-text); font-weight: 600; }
     .title { margin: 2px 0 4px; font-weight: 600; }
     .body { margin: 0; color: #a1a1aa; font-size: 13px; }
     .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
     .row:empty { display: none; }
     button { font: inherit; font-weight: 600; padding: 6px 14px; border-radius: 8px; cursor: pointer;
       border: 1px solid rgb(255 255 255 / 15%); background: transparent; color: #fafafa; }
-    button.primary { background: #6e56cf; border-color: #6e56cf; }
+    button.primary { background: var(--primary); border-color: var(--primary); }
     button:hover { filter: brightness(1.15); }
-    button:focus-visible { outline: 2px solid #baa7ff; outline-offset: 2px; }
+    button:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 2px; }
   </style>
   <div class="box" role="region" aria-live="polite" aria-label="Instagram 創作者精選">
     <div class="brand">Instagram 創作者精選</div>
