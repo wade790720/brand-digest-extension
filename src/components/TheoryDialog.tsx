@@ -12,7 +12,7 @@ import { proposeSkeleton, skeletonToText, textToSkeleton } from '@/lib/theory'
 import type { Creator, Theory } from '@/types'
 
 // 不填主題：讓 AI 依全部貼文挑理論
-const ALL = '全部內容'
+export const ALL = '全部內容'
 
 /** 產生理論對位版：①輸入主題 → ②AI 提骨架、使用者確認或修改 → ③交給 onStart 在背景產生 */
 export function TheoryDialog({ creator, open, initialTopic, onOpenChange, onStart }: {

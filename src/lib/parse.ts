@@ -1,4 +1,4 @@
-import type { CollectMessage } from '@/types'
+import type { CollectMessage, Post } from '@/types'
 
 type Item = Record<string, any>
 
@@ -20,6 +20,18 @@ export function audioUrlOf(manifest?: string): string | undefined {
     if (isAudio && url) return url.replace(/&amp;/g, '&')
   }
   return undefined
+}
+
+const num = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : undefined)
+
+/** IG 貼文資料裡的互動數字。播放數在不同回應裡欄位名不同，取第一個有的 */
+export function statsOf(it: Item): Post['stats'] {
+  const s = {
+    likes: num(it.like_count),
+    comments: num(it.comment_count),
+    plays: num(it.play_count) ?? num(it.ig_play_count) ?? num(it.view_count) ?? num(it.video_view_count),
+  }
+  return Object.values(s).some((v) => v !== undefined) ? s : undefined
 }
 
 /** 從 IG 頁面自己收到的 graphql 回應中，挑出這位主播的貼文。
@@ -51,6 +63,7 @@ export function extractPosts(json: unknown, creator: string): CollectMessage | n
       caption: it.caption?.text ?? '',
       audioUrl: audioUrlOf(it.video_dash_manifest),
       videoUrl: it.video_versions?.[0]?.url,
+      ...(statsOf(it) && { stats: statsOf(it) }), // 沒有數字就不帶這個欄位，免得合併時蓋掉之前存的
     })),
   }
 }

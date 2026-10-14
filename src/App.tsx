@@ -14,6 +14,7 @@ import { LlmError } from '@/lib/llm'
 import { processCreator, type Progress } from '@/lib/pipeline'
 import { cn } from '@/lib/utils'
 import { deleteCreator, getCreators, onStoreChange } from '@/lib/store'
+import { buildPlaybook } from '@/lib/script'
 import { buildTheory } from '@/lib/theory'
 import type { Creator } from '@/types'
 
@@ -147,6 +148,7 @@ export default function App() {
               `${current.name} 的知識庫已更新`)}
             onTheory={(topic, sk) => runTask(current, (c, signal, onProgress) => buildTheory(c, topic, sk, signal, onProgress),
               `理論對位：${topic} 已產生`)}
+            onScript={() => runTask(current, buildPlaybook, `${current.name} 的寫法手冊已產生`)}
             onStop={() => abort.current?.abort()}
           />
         ) : (

@@ -6,16 +6,18 @@ import type { Run } from '@/App'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { TheoryDialog } from '@/components/TheoryDialog'
+import { ALL, TheoryDialog } from '@/components/TheoryDialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { deleteTheory, getChecks, getKnowledgeBase, getPosts, getTheories, onStoreChange, saveChecks } from '@/lib/store'
+import { deleteTheory, getChecks, getKnowledgeBase, getPlaybook, getPosts, getTheories, onStoreChange, saveChecks } from '@/lib/store'
+import { linkCites } from '@/lib/cites'
 import { taskKey, taskKeys } from '@/lib/tasks'
 import { download } from '@/lib/utils'
-import type { Creator, KnowledgeBase, Post, Theory, TheoryDoc } from '@/types'
+import type { Creator, KnowledgeBase, Playbook, Post, Theory, TheoryDoc } from '@/types'
 
 const STATUS: Record<Post['status'], { label: string; variant: 'secondary' | 'default' | 'destructive' }> = {
   new: { label: '待處理', variant: 'secondary' },
@@ -38,8 +40,6 @@ const rehypeBr = () => (tree: any) => {
   walk(tree)
 }
 
-// 出處 [6] 變成站內連結 #src-6；後面接 ( 的是一般連結，不動
-const linkCites = (md: string) => md.replace(/\[(\d{1,4})\](?!\()/g, '[\\[$1\\]](#src-$1)')
 
 /** 捲到文末「來源索引」的第 n 項，停下後邊框亮一下（樣式在 index.css 的 .source-flash） */
 function scrollToSource(article: HTMLElement, n: number) {
@@ -98,7 +98,7 @@ function Markdown({ text, tasks }: { text: string; tasks?: { checked: Set<string
   )
 }
 
-export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onStart, onTheory, onStop }: {
+export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onStart, onTheory, onScript, onStop }: {
   creator: Creator
   run: Run | null
   stopReason?: string
@@ -106,12 +106,15 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   onDelete: () => void
   onStart: (limit?: number) => void
   onTheory: (topic: string, skeleton: Theory[]) => void
+  onScript: () => void
   onStop: () => void
 }) {
   const [posts, setPosts] = useState<Post[]>([])
   const [kb, setKb] = useState<KnowledgeBase>()
   const [theories, setTheories] = useState<TheoryDoc[]>([])
-  const [tab, setTab] = useState('kb') // kb、posts，或 theory:<主題>
+  const [playbook, setPlaybook] = useState<Playbook>()
+  const [tab, setTab] = useState('kb') // kb、script、theory、posts
+  const [theoryTopic, setTheoryTopic] = useState<string | null>(null) // 理論對位分頁裡選中的主題；null＝最新的一篇
   const [dialogTopic, setDialogTopic] = useState<string | null>(null) // null＝對話框關著
   const [checked, setChecked] = useState<Set<string>>(new Set())
 
@@ -119,6 +122,7 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
     setPosts(await getPosts(creator))
     setKb(await getKnowledgeBase(creator.name))
     setTheories(Object.values(await getTheories(creator.name)))
+    setPlaybook(await getPlaybook(creator.name))
     setChecked(new Set(await getChecks(creator.name)))
   }, [creator])
   useEffect(() => {
@@ -136,6 +140,9 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   const trial = !kb && todo > TRIAL
 
   const actions = kb ? taskKeys(kb.markdown) : []
+  // 萃取完成、還沒拆解腳本的貼文（拆解用萃取時存下的逐字稿，不用重新轉錄）
+  const scriptTodo = posts.filter((p) => p.status === 'done' && !p.script && (p.transcript || p.caption)).length
+  const startScript = () => (setTab('script'), onScript())
   const actionsDone = actions.filter((k) => checked.has(k)).length
   function toggle(key: string) {
     const next = new Set(checked)
@@ -149,10 +156,15 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
     .sort((a, b) => b.processedAt! - a.processedAt!) : []
   const tally = (v: string) => fresh.filter((p) => p.digest!.value === v).length
 
+  // 理論對位：一個主題一篇，全部收在同一個分頁裡用選單切換，分頁列不會因為主題變多而變長
+  const sortedTheories = [...theories].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+  const theory = sortedTheories.find((d) => d.topic === theoryTopic) ?? sortedTheories[0]
+  const topicLabel = (t: string) => (t === ALL ? '全部內容（不限主題）' : t)
+
   async function removeTheory(topic: string) {
-    if (!confirm(`刪除「理論對位：${topic}」？刪掉後要重新產生。`)) return
+    if (!confirm(`刪除理論對位「${topicLabel(topic)}」？刪掉後要重新產生。`)) return
     await deleteTheory(creator.name, topic)
-    setTab('kb')
+    setTheoryTopic(null)
   }
 
   return (
@@ -259,16 +271,42 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
         <div className="flex flex-wrap items-center gap-2">
           <TabsList className="h-auto flex-wrap">
             <TabsTrigger value="kb">知識庫</TabsTrigger>
-            {theories.map((d) => (
-              <TabsTrigger key={d.topic} value={`theory:${d.topic}`}>理論對位：{d.topic}</TabsTrigger>
-            ))}
+            <TabsTrigger value="script">腳本拆解</TabsTrigger>
+            <TabsTrigger value="theory">理論對位{theories.length > 1 && `（${theories.length}）`}</TabsTrigger>
             <TabsTrigger value="posts">貼文（{posts.length}）</TabsTrigger>
           </TabsList>
-          <Button variant="ghost" size="sm" disabled={!!run || done === 0} onClick={() => setDialogTopic('')}
-            title="把經驗對位到既有理論，產生新的一篇">
-            <Plus /> 理論對位
-          </Button>
         </div>
+
+        <TabsContent value="script" className="space-y-4 pt-4">
+          {playbook ? (
+            <>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="outline" size="sm" disabled={!!run} onClick={startScript}>
+                  <RefreshCw /> {scriptTodo ? `拆解新的 ${scriptTodo} 則並重新整合` : '重新整合'}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => download(`${creator.name}-腳本拆解.md`, playbook.markdown)}>
+                  <Download /> 下載 Markdown
+                </Button>
+              </div>
+              <Markdown text={playbook.markdown} tasks={{ checked, toggle }} />
+            </>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><FileText /></EmptyMedia>
+                <EmptyTitle>{mine ? '拆解中…' : '拆解這位主播怎麼說'}</EmptyTitle>
+                <EmptyDescription>
+                  {mine ? '進度在上方。' : done
+                    ? `分析 hook、腳本結構、CTA 和文案公式，整理成可以直接套用的寫法手冊。用已存的逐字稿，每則約 1 次 AI 請求（共 ${scriptTodo} 則）。`
+                    : '先按「開始萃取」，萃取完成的貼文才能拆解。'}
+                </EmptyDescription>
+              </EmptyHeader>
+              {!mine && done > 0 && (
+                <Button onClick={startScript} disabled={!!run}><Play /> 開始拆解</Button>
+              )}
+            </Empty>
+          )}
+        </TabsContent>
 
         <TabsContent value="kb" className="space-y-4 pt-4">
           {kb ? (
@@ -291,36 +329,64 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
           )}
         </TabsContent>
 
-        {theories.map((d) => (
-          <TabsContent key={d.topic} value={`theory:${d.topic}`} className="space-y-4 pt-4">
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="outline" size="sm" disabled={!!run} onClick={() => setDialogTopic(d.topic)}>
-                <RefreshCw /> {d.markdown ? '重新產生' : '繼續產生'}
-              </Button>
-              {d.markdown && (
-                <Button variant="outline" size="sm" onClick={() => download(`${creator.name}-理論對位-${d.topic}.md`, d.markdown!)}>
-                  <Download /> 下載 Markdown
+        <TabsContent value="theory" className="space-y-4 pt-4">
+          {theory ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={theory.topic} onValueChange={setTheoryTopic}>
+                  <SelectTrigger className="w-auto min-w-48" aria-label="理論對位的主題"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {sortedTheories.map((d) => (
+                      <SelectItem key={d.topic} value={d.topic}>{topicLabel(d.topic)}{!d.markdown && '（未完成）'}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button variant="ghost" size="sm" disabled={!!run || done === 0} onClick={() => setDialogTopic('')}>
+                  <Plus /> 新主題
                 </Button>
+                <div className="ml-auto flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" disabled={!!run} onClick={() => setDialogTopic(theory.topic)}>
+                    <RefreshCw /> {theory.markdown ? '重新產生' : '繼續產生'}
+                  </Button>
+                  {theory.markdown && (
+                    <Button variant="outline" size="sm" onClick={() => download(`${creator.name}-理論對位-${theory.topic}.md`, theory.markdown!)}>
+                      <Download /> 下載 Markdown
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" disabled={mine} onClick={() => removeTheory(theory.topic)}>
+                    <Trash2 /> 刪除
+                  </Button>
+                </div>
+              </div>
+              {theory.markdown ? (
+                <Markdown text={theory.markdown} />
+              ) : (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon"><FileText /></EmptyMedia>
+                    <EmptyTitle>{mine ? '產生中…' : '還沒產生完成'}</EmptyTitle>
+                    <EmptyDescription>
+                      {mine ? '進度在上方。' : '按「繼續產生」，已完成的步驟不會重做。'}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               )}
-              <Button variant="outline" size="sm" disabled={mine} onClick={() => removeTheory(d.topic)}>
-                <Trash2 /> 刪除
-              </Button>
-            </div>
-            {d.markdown ? (
-              <Markdown text={d.markdown} />
-            ) : (
-              <Empty>
-                <EmptyHeader>
-                  <EmptyMedia variant="icon"><FileText /></EmptyMedia>
-                  <EmptyTitle>{mine ? '產生中…' : '還沒產生完成'}</EmptyTitle>
-                  <EmptyDescription>
-                    {mine ? '進度在上方。' : '按「繼續產生」，已完成的步驟不會重做。'}
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            )}
-          </TabsContent>
-        ))}
+            </>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><FileText /></EmptyMedia>
+                <EmptyTitle>把經驗對位到既有理論</EmptyTitle>
+                <EmptyDescription>
+                  {done
+                    ? '把這位主播零碎的經驗對位到既有理論，整理成可以照著做的公式。可以指定主題，例如「黃金投資時機」；每個主題一篇，之後在這裡切換。'
+                    : '先按「開始萃取」，萃取完成的貼文才能做理論對位。'}
+                </EmptyDescription>
+              </EmptyHeader>
+              {done > 0 && <Button onClick={() => setDialogTopic('')} disabled={!!run}><Play /> 開始理論對位</Button>}
+            </Empty>
+          )}
+        </TabsContent>
 
         <TabsContent value="posts" className="pt-4">
           <Table>
@@ -354,7 +420,7 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
 
       <TheoryDialog creator={creator} open={dialogTopic !== null} initialTopic={dialogTopic ?? ''}
         onOpenChange={(o) => !o && setDialogTopic(null)}
-        onStart={(topic, sk) => (setTab(`theory:${topic}`), onTheory(topic, sk))} />
+        onStart={(topic, sk) => (setTab('theory'), setTheoryTopic(topic), onTheory(topic, sk))} />
     </div>
   )
 }

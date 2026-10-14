@@ -1,4 +1,4 @@
-import type { Creator, KnowledgeBase, ModelStatus, Post, Settings, TheoryDoc } from '@/types'
+import type { Creator, KnowledgeBase, ModelStatus, Playbook, Post, Settings, TheoryDoc } from '@/types'
 
 // 資料全存在 chrome.storage.local（manifest 有 unlimitedStorage）。
 // 在一般網頁預覽（npm run dev）時沒有 chrome.storage，改用 localStorage，方便開發介面。
@@ -127,6 +127,12 @@ export async function getChecks(creator: string): Promise<string[]> {
 
 export const saveChecks = (creator: string, items: string[]) => area.set({ [`checks:${creator}`]: items })
 
+export async function getPlaybook(creator: string): Promise<Playbook | undefined> {
+  return (await area.get([`playbook:${creator}`]))[`playbook:${creator}`]
+}
+
+export const savePlaybook = (creator: string, p: Playbook) => area.set({ [`playbook:${creator}`]: p })
+
 /** 一位主播的理論對位版，key 是主題 */
 export async function getTheories(creator: string): Promise<Record<string, TheoryDoc>> {
   return (await area.get([`theory:${creator}`]))[`theory:${creator}`] ?? {}
@@ -145,14 +151,14 @@ export async function deleteTheory(creator: string, topic: string) {
 
 export async function deleteCreator(creator: Creator) {
   const caches = Object.keys(await area.get(null))
-    .filter((k) => k === `cache:kb:${creator.name}` || k.startsWith(`cache:theory:${creator.name}:`))
-  await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, `theory:${creator.name}`, `checks:${creator.name}`, ...caches,
+    .filter((k) => k === `cache:kb:${creator.name}` || k === `cache:script:${creator.name}` || k.startsWith(`cache:theory:${creator.name}:`))
+  await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, `theory:${creator.name}`, `checks:${creator.name}`, `playbook:${creator.name}`, ...caches,
     ...creator.codes.map((c) => `post:${c}`)])
 }
 
 // —— 備份 ——
 // 金鑰不進備份：備份檔可能被傳出去。設定也不匯出，換電腦重填就好。
-const BACKUP_KEY = /^(creator|post|kb|theory|checks):/
+const BACKUP_KEY = /^(creator|post|kb|theory|checks|playbook):/
 
 export async function exportAll() {
   const all = await area.get(null)

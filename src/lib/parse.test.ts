@@ -54,3 +54,13 @@ it('合作貼文：發文者是別人、主播是共同作者，也要收', () =
   expect(msg.posts.map((p) => p.code)).toEqual(['COL', 'OWN'])
   expect(msg.fullName).toBe('教練') // 名稱取主播自己發的那則，不取合作者的
 })
+
+it('互動數字：播放數取第一個有的欄位；沒有數字就不帶 stats', () => {
+  const res = { data: { items: [
+    { code: 'V', media_type: 2, user: { username: 'coach' }, like_count: 120, comment_count: 8, ig_play_count: 5000 },
+    { code: 'I', media_type: 1, user: { username: 'coach' } },
+  ] } }
+  const [v, i] = extractPosts(res, 'coach')!.posts
+  expect(v.stats).toEqual({ likes: 120, comments: 8, plays: 5000 })
+  expect('stats' in i).toBe(false)
+})
