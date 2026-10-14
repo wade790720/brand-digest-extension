@@ -16,6 +16,7 @@ export const browserLang = () => globalThis.chrome?.i18n?.getUILanguage?.() ?? g
 
 const zh = {
   'app.name': 'Instagram 創作者精選',
+  'app.shortName': 'Instagram 創作者精選', // 側邊欄寬 240px，英文全名放不下
   'common.cancel': '取消',
   'common.delete': '刪除',
   'common.save': '儲存',
@@ -277,6 +278,7 @@ export type Key = keyof typeof zh
 
 const en: Record<Key, string> = {
   'app.name': 'Creator Digest for Instagram',
+  'app.shortName': 'Creator Digest',
   'common.cancel': 'Cancel',
   'common.delete': 'Delete',
   'common.save': 'Save',

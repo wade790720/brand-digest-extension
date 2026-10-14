@@ -176,7 +176,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload /> {t('settings.import')}</Button>
             <input ref={fileRef} type="file" accept=".json,application/json" hidden
               onChange={(e) => importBackup(e.target.files?.[0])} />
-            <ReportProblem />
+            <ReportProblem lang={getLang() === 'en' ? 'en' : 'zh'} />
           </div>
         </div>
 

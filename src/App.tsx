@@ -99,7 +99,7 @@ export default function App() {
       <aside className="flex w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
         <button className="flex h-12 items-center gap-2 px-3 text-left" onClick={() => setSelected(null)}>
           <img src="/icons/icon-48.png" alt="" className="size-6 rounded-md" />
-          <span className="font-semibold text-foreground">{t('app.name')}</span>
+          <span className="font-semibold text-foreground">{t('app.shortName')}</span>
         </button>
         <Separator />
         <p className="px-4 pt-4 pb-2 text-xs text-muted-foreground">{t('app.creators')}</p>

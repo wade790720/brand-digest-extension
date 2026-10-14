@@ -6,6 +6,9 @@ import './index.css'
 import App from './App.tsx'
 import { MembershipGate } from '@/components/MembershipGate'
 import { captureErrors } from '@/lib/error-log'
+import { browserLang, resolveLang, setLang } from '@/lib/i18n'
+import { getSettings } from '@/lib/store'
+import { useLang } from '@/lib/useLang'
 
 captureErrors('brand-digest')
 
@@ -15,11 +18,20 @@ const applyTheme = () => document.documentElement.classList.toggle('dark', dark.
 applyTheme()
 dark.addEventListener('change', applyTheme)
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <TooltipProvider>
-      <MembershipGate><App /></MembershipGate>
-      <Toaster richColors position="bottom-right" />
-    </TooltipProvider>
-  </StrictMode>,
-)
+// 會員檢查畫面在 App 之前出現：先讀語言設定，它才會跟著使用者選的語言
+function Root() {
+  const lang = useLang()
+  return <MembershipGate lang={lang === 'en' ? 'en' : 'zh'}><App /></MembershipGate>
+}
+
+getSettings().then((s) => {
+  setLang(resolveLang(s.lang, browserLang()))
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <TooltipProvider>
+        <Root />
+        <Toaster richColors position="bottom-right" />
+      </TooltipProvider>
+    </StrictMode>,
+  )
+})
