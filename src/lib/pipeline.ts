@@ -1,5 +1,6 @@
 import { LlmError, generate, inputBudget, parseJson, transcribe } from '@/lib/llm'
-import { AGGREGATE_SYSTEM, DIGEST_SYSTEM, aggregateUser, digestUser, mergeUser } from '@/lib/prompts'
+import { getLang, t, type Lang } from '@/lib/i18n'
+import { aggregateSystem, aggregateUser, digestSystem, digestUser, mergeUser } from '@/lib/prompts'
 import { getCache, getPosts, getSettings, saveCache, saveKnowledgeBase, savePost } from '@/lib/store'
 import type { Creator, Digest, Post, Settings } from '@/types'
 
@@ -25,11 +26,12 @@ function sleep(ms: number, signal: AbortSignal) {
 function toDigest(raw: any): Digest {
   const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : [])
   return {
-    topic: String(raw?.topic ?? '（無主題）'),
+    topic: String(raw?.topic ?? t('pipe.noTopic')),
     points: list(raw?.points),
     quotes: list(raw?.quotes),
     terms: list(raw?.terms),
-    value: ['高', '中', '低'].includes(raw?.value) ? raw.value : '中',
+    // 資料裡固定存中文 高／中／低；英文模式下 AI 偶爾會翻成 High／Medium／Low，換回來
+    value: VALUE_ALIAS[String(raw?.value ?? '').trim().toLowerCase()] ?? '中',
   }
 }
 
@@ -37,8 +39,8 @@ async function download(p: Post): Promise<Blob> {
   const url = p.audioUrl ?? p.videoUrl!
   const res = await fetch(url, { credentials: 'omit' }) // 不帶 IG 登入狀態
   if (res.status === 403 || res.status === 410)
-    throw new Error('影片連結已過期。回到主播主頁重新往下滑到這則，再按一次萃取。')
-  if (!res.ok) throw new Error(`下載失敗（HTTP ${res.status}）`)
+    throw new Error(t('pipe.expired'))
+  if (!res.ok) throw new Error(t('pipe.downloadFail', { status: res.status }))
   return res.blob()
 }
 
@@ -47,7 +49,8 @@ async function download(p: Post): Promise<Blob> {
  *  單則失敗只記在那一則，繼續下一則。 */
 export async function processCreator(creator: Creator, signal: AbortSignal, onProgress: (p: Progress) => void, limit?: number) {
   const settings = await getSettings()
-  if (!settings.keys.groq) throw new LlmError('轉錄需要 Groq 金鑰（免費），請先到設定填寫。', 'auth')
+  if (!settings.keys.groq) throw new LlmError(t('llm.groqNeeded'), 'auth')
+  const lang = getLang() // 這次產出的語言：開始時的介面語言
   const posts = await getPosts(creator)
   const todo = posts.filter((p) => p.status !== 'done').slice(0, limit) // limit：第一次先試幾則，快點看到成果
   const report = (done: number, status: string) => onProgress({ done, total: todo.length, status })
@@ -55,24 +58,25 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
 
   for (const [i, p] of todo.entries()) {
     if (signal.aborted) break
-    const label = `第 ${i + 1}/${todo.length} 則`
+    const label = t('pipe.label', { i: i + 1, n: todo.length })
+    const step = (msg: string) => t('pipe.step', { label, msg })
     let downloaded = false
     try {
       if (p.transcript === undefined) {
         if (p.audioUrl || p.videoUrl) {
-          report(i, `${label}：下載音軌…`)
+          report(i, step(t('pipe.download')))
           const audio = await download(p)
           downloaded = true
-          report(i, `${label}：轉錄…`)
-          p.transcript = await transcribe(settings, audio, (m) => report(i, `${label}：${m}`))
+          report(i, step(t('pipe.transcribe')))
+          p.transcript = await transcribe(settings, audio, (m) => report(i, step(m)))
         } else {
           p.transcript = '' // 圖片貼文：只用文案
         }
         await savePost(p) // 轉錄先存：萃取失敗時下次不用重新下載、轉錄
       }
-      report(i, `${label}：萃取重點…`)
-      const raw = await generate(settings, DIGEST_SYSTEM, digestUser(p.caption, p.transcript), {
-        json: true, onWait: (m) => report(i, `${label}：${m}`),
+      report(i, step(t('pipe.extract')))
+      const raw = await generate(settings, digestSystem(lang), digestUser(p.caption, p.transcript), {
+        json: true, onWait: (m) => report(i, step(m)),
       })
       p.digest = toDigest(parseJson(raw))
       p.status = 'done'
@@ -88,7 +92,7 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
       p.error = e instanceof Error ? e.message : String(e)
     }
     await savePost(p)
-    report(i + 1, `${label}：${p.status === 'done' ? '完成' : `失敗：${p.error}`}`)
+    report(i + 1, step(p.status === 'done' ? t('common.done') : t('pipe.failed', { error: p.error ?? '' })))
     if (downloaded && i < todo.length - 1)
       await sleep((PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN)) * 1000, signal)
   }
@@ -100,7 +104,7 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
     throw fatal
   }
   await buildKnowledgeBase(creator, settings, onProgress)
-  onProgress({ done: 1, total: 1, status: '完成' })
+  onProgress({ done: 1, total: 1, status: t('common.done') })
 }
 
 /** 跨篇整合成知識庫。內容超過模型一次能收的量，就分批整理再合併（Groq 免費方案需要）。
@@ -126,14 +130,15 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
   const say = (m: string) => onProgress({ done: step, total, status: m })
 
   const cached = await cachedCaller(`kb:${creator.name}`, settings)
-  const call = (user: string) => cached.call(AGGREGATE_SYSTEM, user, {
-    onStart: () => say(`${status}（每批可能要一兩分鐘）`), onWait: (m) => say(`${status}${m}`),
+  const lang = getLang()
+  const call = (user: string) => cached.call(aggregateSystem(lang), user, {
+    onStart: () => say(`${status}${t('kb.batchSlow')}`), onWait: (m) => say(`${status}${m}`),
   })
   const tooLarge = (e: unknown) => e instanceof LlmError && e.kind === 'too_large'
   // 字數只是估計：供應商算的 token 可能比預期多。被拒說太大，就對半切再送
   const digestBatch = async (b: typeof items): Promise<string[]> => {
     try {
-      return [stripFence(await call(aggregateUser(creator.name, b.length, JSON.stringify(b))))]
+      return [stripFence(await call(aggregateUser(creator.name, b.length, JSON.stringify(b), lang)))]
     } catch (e) {
       if (!tooLarge(e) || b.length < 2) throw e
       const mid = b.length >> 1
@@ -142,14 +147,14 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
   }
   let parts: string[] = []
   for (const [i, b] of batches.entries()) {
-    status = batches.length > 1 ? `整合知識庫：第 ${i + 1}/${batches.length} 批…` : '整合知識庫…'
+    status = batches.length > 1 ? t('kb.batch', { i: i + 1, n: batches.length }) : t('kb.building')
     say(status)
     parts.push(...(await digestBatch(b)))
     step++
   }
   // 分批的結果再合併，直到剩一份（每次合併也不能超過上限）
   while (parts.length > 1) {
-    status = `合併 ${parts.length} 份分批結果…`
+    status = t('kb.merge', { n: parts.length })
     say(status)
     const next: string[] = []
     for (let i = 0; i < parts.length; ) {
@@ -158,7 +163,7 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
       if (group.length === 1) next.push(group[0])
       else {
         try {
-          next.push(stripFence(await call(mergeUser(creator.name, group))))
+          next.push(stripFence(await call(mergeUser(creator.name, group, lang))))
         } catch (e) {
           if (!tooLarge(e)) throw e
           next.push(...group) // 合併太大就不合，下面會接起來
@@ -173,7 +178,9 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
   }
 
   const dropped = posts.length - use.length
-  const note = `_共 ${posts.length} 則${dropped ? `，篩掉 ${dropped} 則低含金量後整合 ${use.length} 則` : ''}_`
+  const note = `_${dropped
+    ? t('kb.noteDropped', { total: posts.length, dropped, use: use.length }, lang)
+    : t('kb.note', { total: posts.length }, lang)}_`
   await saveKnowledgeBase(creator.name, {
     markdown: `${note}\n\n${parts[0]}\n\n${sourceIndex(use)}\n`,
     updatedAt: Date.now(),
@@ -190,8 +197,10 @@ export async function keptPosts(creator: Creator) {
 }
 
 /** 文末的來源索引：[n] 主題 — 連結。程式產生，保證每個 [編號] 都能追回原文。 */
-export const sourceIndex = (use: Post[]) =>
-  `## 來源索引\n\n${use.map((p, i) => `${i + 1}. ${p.digest!.topic} — [看原文](${postUrl(p.code)})`).join('\n')}`
+export const sourceIndex = (use: Post[], lang: Lang = getLang()) =>
+  `## ${t('src.heading', {}, lang)}\n\n${use.map((p, i) => `${i + 1}. ${p.digest!.topic} — [${t('src.view', {}, lang)}](${postUrl(p.code)})`).join('\n')}`
+
+const VALUE_ALIAS: Record<string, Digest['value']> = { 高: '高', 中: '中', 低: '低', high: '高', medium: '中', mid: '中', low: '低' }
 
 /** 呼叫 AI，回應先暫存在 scope 底下：額度在半路用完時，下次同樣的請求直接用暫存。整理完成後呼叫 clear。 */
 export async function cachedCaller(scope: string, settings: Settings) {

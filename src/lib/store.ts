@@ -1,3 +1,4 @@
+import { t } from '@/lib/i18n'
 import type { Creator, KnowledgeBase, ModelStatus, Playbook, Post, Settings, TheoryDoc } from '@/types'
 
 // 資料全存在 chrome.storage.local（manifest 有 unlimitedStorage）。
@@ -170,7 +171,7 @@ export async function exportAll() {
 export async function importAll(backup: unknown): Promise<number> {
   const b = backup as { app?: string; data?: Record<string, unknown> }
   if (b?.app !== 'brand-digest' || typeof b.data !== 'object' || !b.data)
-    throw new Error('這不是 Instagram 創作者精選 的備份檔。')
+    throw new Error(t('store.notBackup', { app: t('app.name') }))
   const data = Object.fromEntries(Object.entries(b.data).filter(([k]) => BACKUP_KEY.test(k)))
   const local = await area.get(Object.keys(data))
   for (const [k, v] of Object.entries(data)) {

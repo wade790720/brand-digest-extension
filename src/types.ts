@@ -1,3 +1,4 @@
+import type { LangSetting } from '@/lib/i18n'
 /** 一則收集到的貼文。由背景程式寫入（收集），由主頁面補上轉錄與萃取（處理）。 */
 export interface Post {
   code: string // IG 貼文代碼，網址是 instagram.com/p/<code>/
@@ -90,6 +91,7 @@ export interface Settings {
   provider: Provider
   keys: Partial<Record<Provider, string>>
   models: Record<Provider, string>
+  lang?: LangSetting // 介面和 AI 產出的語言；沒有或 auto 就跟著瀏覽器
 }
 
 /** content script → 背景程式 */

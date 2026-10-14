@@ -9,6 +9,8 @@ vi.mock('@/lib/store', () => ({
   setModelStatus: async (k: string, state: ModelStatus['state']) => void (status[k] = { state, at: Date.now() }),
 }))
 const { generate, LlmError, resetPacing, waitNeeded } = await import('./llm')
+const { setLang } = await import('./i18n')
+setLang('zh-TW') // 期望的錯誤訊息是中文；不依賴這台電腦的系統語言
 
 const settings = { provider: 'groq', keys: { groq: 'k' }, models: { groq: 'a' } } as unknown as Settings
 let calls: string[] = []

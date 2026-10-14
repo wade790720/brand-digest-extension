@@ -1,4 +1,6 @@
 import { expect, it } from 'vitest'
+import { setLang } from './i18n'
+setLang('zh-TW') // 期望值是中文；不依賴這台電腦的系統語言
 import type { Post } from '@/types'
 import { hookStats, statsTable, toBreakdown } from './script'
 

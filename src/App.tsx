@@ -2,6 +2,7 @@ import { MoreHorizontal, Settings as SettingsIcon, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { CreatorView } from '@/components/CreatorView'
+import { ALL } from '@/components/TheoryDialog'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { Welcome } from '@/components/Welcome'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,9 @@ import { Separator } from '@/components/ui/separator'
 import { LlmError } from '@/lib/llm'
 import { processCreator, type Progress } from '@/lib/pipeline'
 import { cn } from '@/lib/utils'
-import { deleteCreator, getCreators, onStoreChange } from '@/lib/store'
+import { browserLang, resolveLang, setLang, t } from '@/lib/i18n'
+import { deleteCreator, getCreators, getSettings, onStoreChange } from '@/lib/store'
+import { useLang } from '@/lib/useLang'
 import { buildPlaybook } from '@/lib/script'
 import { buildTheory } from '@/lib/theory'
 import type { Creator } from '@/types'
@@ -27,6 +30,8 @@ export interface Run {
 }
 
 export default function App() {
+  const lang = useLang() // 切換語言時整個畫面重畫
+  useEffect(() => void (document.title = t('app.name')), [lang]) // 瀏覽器分頁標題也跟著換
   const [creators, setCreators] = useState<Creator[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -36,12 +41,15 @@ export default function App() {
   const abort = useRef<AbortController | null>(null)
   const lastTask = useRef<{ task: Task; doneMsg: string } | null>(null) // 停下時「繼續」重跑它；每一步都有暫存，重跑就是接著做
 
-  const reload = useCallback(() => getCreators().then(setCreators), [])
+  // 主播清單和語言設定：背景程式收集到新貼文、或設定改了語言時即時更新（合併連續的變更，避免一直重讀）
+  const reload = useCallback(() => Promise.all([getCreators(), getSettings()]).then(([list, s]) => {
+    setCreators(list)
+    setLang(resolveLang(s.lang, browserLang()))
+  }), [])
   useEffect(() => {
     reload()
-    // 背景程式收集到新貼文時，清單即時更新（合併連續的變更，避免一直重讀）
-    let t: ReturnType<typeof setTimeout>
-    return onStoreChange(() => (clearTimeout(t), (t = setTimeout(reload, 400))))
+    let timer: ReturnType<typeof setTimeout>
+    return onStoreChange(() => (clearTimeout(timer), (timer = setTimeout(reload, 400))))
   }, [reload])
 
   // 處理中離開頁面會中斷，提醒使用者
@@ -62,7 +70,7 @@ export default function App() {
     abort.current = ctrl
     setStopped(null)
     const startedAt = Date.now()
-    setRun({ creator: creator.name, progress: { done: 0, total: 0, status: '準備中…' }, startedAt })
+    setRun({ creator: creator.name, progress: { done: 0, total: 0, status: t('app.preparing') }, startedAt })
     try {
       await task(creator, ctrl.signal, (progress) => setRun({ creator: creator.name, progress, startedAt }))
       if (!ctrl.signal.aborted) toast.success(doneMsg)
@@ -81,7 +89,7 @@ export default function App() {
     if (!toDelete) return
     await deleteCreator(toDelete)
     if (selected === toDelete.name) setSelected(null)
-    toast(`已刪除 ${toDelete.name} 的所有資料`)
+    toast(t('app.deleted', { name: toDelete.name }))
     setToDelete(null)
     reload()
   }
@@ -91,13 +99,13 @@ export default function App() {
       <aside className="flex w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
         <button className="flex h-12 items-center gap-2 px-3 text-left" onClick={() => setSelected(null)}>
           <img src="/icons/icon-48.png" alt="" className="size-6 rounded-md" />
-          <span className="font-semibold text-foreground">Instagram 創作者精選</span>
+          <span className="font-semibold text-foreground">{t('app.name')}</span>
         </button>
         <Separator />
-        <p className="px-4 pt-4 pb-2 text-xs text-muted-foreground">主播</p>
+        <p className="px-4 pt-4 pb-2 text-xs text-muted-foreground">{t('app.creators')}</p>
         {/* 原生捲動：Radix ScrollArea 內層是 display: table，會把整列撐寬，右邊的「⋯」選單被切掉 */}
         <div className="min-h-0 flex-1 overflow-y-auto px-2">
-          {creators.length === 0 && <p className="px-2 py-1 text-sm text-muted-foreground">還沒有收集任何主播。</p>}
+          {creators.length === 0 && <p className="px-2 py-1 text-sm text-muted-foreground">{t('app.noCreators')}</p>}
           {creators.map((c) => {
             const on = c.name === selected
             // 「⋯」平常隱藏，滑過、鍵盤移到這列、選中或選單開著時才出現，出現時蓋住則數（同 Instagram 整理師）
@@ -112,14 +120,14 @@ export default function App() {
                 </button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon-xs" aria-label={`${c.name} 的更多選項`}
+                    <Button variant="ghost" size="icon-xs" aria-label={t('app.moreFor', { name: c.name })}
                       className={cn('absolute right-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100', on && 'opacity-100')}>
                       <MoreHorizontal />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     <DropdownMenuItem variant="destructive" onSelect={() => setToDelete(c)} disabled={run?.creator === c.name}>
-                      <Trash2 /> 刪除
+                      <Trash2 /> {t('common.delete')}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -130,7 +138,7 @@ export default function App() {
         <Separator />
         <div className="p-2">
           <Button variant="ghost" className="w-full justify-start" onClick={() => setSettingsOpen(true)}>
-            <SettingsIcon /> 設定
+            <SettingsIcon /> {t('app.settings')}
           </Button>
         </div>
       </aside>
@@ -145,10 +153,10 @@ export default function App() {
             onDelete={() => setToDelete(current)}
             onRetry={() => lastTask.current && runTask(current, lastTask.current.task, lastTask.current.doneMsg)}
             onStart={(limit) => runTask(current, (c, signal, onProgress) => processCreator(c, signal, onProgress, limit),
-              `${current.name} 的知識庫已更新`)}
+              t('app.kbUpdated', { name: current.name }))}
             onTheory={(topic, sk) => runTask(current, (c, signal, onProgress) => buildTheory(c, topic, sk, signal, onProgress),
-              `理論對位：${topic} 已產生`)}
-            onScript={() => runTask(current, buildPlaybook, `${current.name} 的寫法手冊已產生`)}
+              t('app.theoryDone', { topic: topic === ALL ? t('theory.all') : topic }))}
+            onScript={() => runTask(current, buildPlaybook, t('app.playbookDone', { name: current.name }))}
             onStop={() => abort.current?.abort()}
           />
         ) : (
@@ -161,16 +169,16 @@ export default function App() {
       <Dialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>刪除 {toDelete?.name}？</DialogTitle>
+            <DialogTitle>{t('app.deleteTitle', { name: toDelete?.name ?? '' })}</DialogTitle>
             <DialogDescription>
-              會刪掉這位主播的 {toDelete?.codes.length} 則貼文、轉錄、萃取結果和知識庫，無法復原。
+              {t('app.deleteDesc', { n: toDelete?.codes.length ?? 0 })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">取消</Button>
+              <Button variant="outline">{t('common.cancel')}</Button>
             </DialogClose>
-            <Button variant="destructive" onClick={confirmDelete}>刪除</Button>
+            <Button variant="destructive" onClick={confirmDelete}>{t('common.delete')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

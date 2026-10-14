@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { setLang } from './i18n'
+setLang('zh-TW') // 期望值是中文；不依賴這台電腦的系統語言
 import { cleanMd, fit, saturation, saturationNote, skeletonToText, textToSkeleton } from './theory'
 
 describe('cleanMd', () => {

@@ -15,21 +15,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { deleteTheory, getChecks, getKnowledgeBase, getPlaybook, getPosts, getTheories, onStoreChange, saveChecks } from '@/lib/store'
 import { linkCites } from '@/lib/cites'
+import { getLang, t, valueLabel, type Key } from '@/lib/i18n'
 import { taskKey, taskKeys } from '@/lib/tasks'
 import { download } from '@/lib/utils'
 import type { Creator, KnowledgeBase, Playbook, Post, Theory, TheoryDoc } from '@/types'
 
-const STATUS: Record<Post['status'], { label: string; variant: 'secondary' | 'default' | 'destructive' }> = {
-  new: { label: '待處理', variant: 'secondary' },
-  done: { label: '完成', variant: 'default' },
-  error: { label: '失敗', variant: 'destructive' },
+const STATUS: Record<Post['status'], { label: Key; variant: 'secondary' | 'default' | 'destructive' }> = {
+  new: { label: 'status.new', variant: 'secondary' },
+  done: { label: 'status.done', variant: 'default' },
+  error: { label: 'status.error', variant: 'destructive' },
 }
 
 const VALUE: Record<'高' | '中' | '低', 'default' | 'secondary' | 'outline'> = { 高: 'default', 中: 'secondary', 低: 'outline' }
 
 const TRIAL = 10
 
-const date = (sec: number) => (sec ? new Date(sec * 1000).toLocaleDateString('zh-TW') : '')
+const date = (sec: number) => (sec ? new Date(sec * 1000).toLocaleDateString(getLang()) : '')
 
 // AI 常在表格裡用 <br> 換行。只把 <br> 換成真的換行；其他 HTML 照舊當純文字顯示，不執行 AI 產生的 HTML
 const rehypeBr = () => (tree: any) => {
@@ -43,7 +44,7 @@ const rehypeBr = () => (tree: any) => {
 
 /** 捲到文末「來源索引」的第 n 項，停下後邊框亮一下（樣式在 index.css 的 .source-flash） */
 function scrollToSource(article: HTMLElement, n: number) {
-  const heading = [...article.querySelectorAll('h2')].find((h) => h.textContent?.includes('來源索引'))
+  const heading = [...article.querySelectorAll('h2')].find((h) => /來源索引|Sources/.test(h.textContent ?? '')) // 兩種語言產生的都要認得
   const li = heading?.nextElementSibling?.querySelectorAll(':scope > li')[n - 1] as HTMLElement | undefined
   if (!li) return
   let done = false
@@ -87,7 +88,7 @@ function Markdown({ text, tasks }: { text: string; tasks?: { checked: Set<string
             const cite = href?.match(/^#src-(\d+)$/)
             if (!cite) return <a href={href} {...props} target="_blank" rel="noreferrer" />
             return (
-              <a href={href} {...props} className="no-underline" title={`看第 ${cite[1]} 則的來源`}
+              <a href={href} {...props} className="no-underline" title={t('cv.citeTitle', { n: cite[1] })}
                 onClick={(e) => (e.preventDefault(), scrollToSource(e.currentTarget.closest('article')!, Number(cite[1])))} />
             )
           },
@@ -159,10 +160,10 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   // 理論對位：一個主題一篇，全部收在同一個分頁裡用選單切換，分頁列不會因為主題變多而變長
   const sortedTheories = [...theories].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
   const theory = sortedTheories.find((d) => d.topic === theoryTopic) ?? sortedTheories[0]
-  const topicLabel = (t: string) => (t === ALL ? '全部內容（不限主題）' : t)
+  const topicLabel = (topic: string) => (topic === ALL ? t('theory.allLabel') : topic)
 
   async function removeTheory(topic: string) {
-    if (!confirm(`刪除理論對位「${topicLabel(topic)}」？刪掉後要重新產生。`)) return
+    if (!confirm(t('cv.deleteTheory', { topic: topicLabel(topic) }))) return
     await deleteTheory(creator.name, topic)
     setTheoryTopic(null)
   }
@@ -182,65 +183,65 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
         </div>
         {/* 處理中不能刪：會刪到正在寫入的資料 */}
         <Button variant="ghost" size="sm" className="shrink-0 text-destructive hover:text-destructive" onClick={onDelete} disabled={mine}>
-          <Trash2 /> 刪除
+          <Trash2 /> {t('common.delete')}
         </Button>
       </header>
 
       <Card>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant="outline">已收集 {posts.length} 則</Badge>
-            <Badge variant="outline">已完成 {done}</Badge>
-            {todo > 0 && <Badge variant="secondary">待處理 {todo}</Badge>}
+            <Badge variant="outline">{t('cv.collected', { n: posts.length })}</Badge>
+            <Badge variant="outline">{t('cv.doneCount', { n: done })}</Badge>
+            {todo > 0 && <Badge variant="secondary">{t('cv.pending', { n: todo })}</Badge>}
             {actions.length > 0 && (
-              <Badge variant={actionsDone === actions.length ? 'default' : 'outline'} title="知識庫「可行動清單」完成幾項">
-                行動 {actionsDone}/{actions.length}
+              <Badge variant={actionsDone === actions.length ? 'default' : 'outline'} title={t('cv.actionsTitle')}>
+                {t('cv.actions', { done: actionsDone, total: actions.length })}
               </Badge>
             )}
             <div className="ml-auto flex flex-wrap gap-2">
               {mine ? (
-                <Button variant="outline" onClick={onStop}><Square /> 停止</Button>
+                <Button variant="outline" onClick={onStop}><Square /> {t('cv.stop')}</Button>
               ) : trial ? (
                 <>
-                  <Button variant="outline" onClick={() => onStart()} disabled={busyElsewhere}>全部萃取（{todo} 則）</Button>
+                  <Button variant="outline" onClick={() => onStart()} disabled={busyElsewhere}>{t('cv.extractAll', { n: todo })}</Button>
                   <Button onClick={() => onStart(TRIAL)} disabled={busyElsewhere}>
-                    <Play /> 先試 {TRIAL} 則（約 3 分鐘）
+                    <Play /> {t('cv.try', { n: TRIAL })}
                   </Button>
                 </>
               ) : (
                 <Button onClick={() => onStart()} disabled={busyElsewhere || posts.length === 0}>
-                  <Play /> {todo > 0 ? `開始萃取（${todo} 則）` : '重新整合知識庫'}
+                  <Play /> {todo > 0 ? t('cv.extract', { n: todo }) : t('cv.rebuild')}
                 </Button>
               )}
             </div>
           </div>
-          {busyElsewhere && <p className="text-sm text-muted-foreground">正在處理 {run!.creator}，完成後才能開始這位。</p>}
+          {busyElsewhere && <p className="text-sm text-muted-foreground">{t('cv.busyElsewhere', { name: run!.creator })}</p>}
           {mine && (
             <div className="space-y-2" aria-live="polite">
               <Progress value={run!.progress.total ? (run!.progress.done / run!.progress.total) * 100 : 0} />
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> {run!.progress.status}
               </p>
-              <p className="text-xs text-muted-foreground">處理中請不要關閉這個分頁。可以切到別的分頁。</p>
+              <p className="text-xs text-muted-foreground">{t('cv.keepTab')}</p>
             </div>
           )}
           {!mine && posts.length > 0 && (
-            <p className="text-xs text-muted-foreground">想收集更多：回到這位主播的 IG 主頁，在右下角按「收集」，再往下滑。</p>
+            <p className="text-xs text-muted-foreground">{t('cv.collectMore')}</p>
           )}
         </CardContent>
       </Card>
 
       {fresh.length > 0 && (
-        <section className="space-y-3" aria-label="這次萃取出的精華">
+        <section className="space-y-3" aria-label={t('cv.freshLabel')}>
           <p className="text-sm text-muted-foreground">
-            已翻出 {fresh.length} 張精華卡：含金量高 {tally('高')}、中 {tally('中')}、低 {tally('低')}
+            {t('cv.freshStats', { n: fresh.length, high: tally('高'), mid: tally('中'), low: tally('低') })}
           </p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {fresh.slice(0, 6).map((p) => (
               <div key={p.code} className={`essence-card space-y-2 rounded-xl border bg-card p-4 ${p.digest!.value === '高' ? 'border-primary/60' : ''}`}>
                 <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span>{date(p.takenAt)}</span>
-                  <Badge variant={VALUE[p.digest!.value]}>含金量 {p.digest!.value}</Badge>
+                  <Badge variant={VALUE[p.digest!.value]}>{t('cv.value', { v: valueLabel(p.digest!.value) })}</Badge>
                 </div>
                 <p className="line-clamp-2 font-medium">{p.digest!.topic}</p>
                 {p.digest!.points[0] && <p className="line-clamp-3 text-sm text-muted-foreground">{p.digest!.points[0]}</p>}
@@ -252,17 +253,17 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
 
       {stopReason && !mine && (
         <Alert variant="destructive">
-          <AlertTitle>中途停下，已完成的部分都有保存</AlertTitle>
+          <AlertTitle>{t('cv.stopped')}</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
             <span>{stopReason}</span>
-            <Button size="sm" variant="outline" onClick={onRetry} disabled={!!run}><Play /> 繼續</Button>
+            <Button size="sm" variant="outline" onClick={onRetry} disabled={!!run}><Play /> {t('common.continue')}</Button>
           </AlertDescription>
         </Alert>
       )}
 
       {failed.length > 0 && !mine && (
         <Alert variant="destructive">
-          <AlertTitle>{failed.length} 則處理失敗，下次按「開始萃取」會重試</AlertTitle>
+          <AlertTitle>{t('cv.failed', { n: failed.length })}</AlertTitle>
           <AlertDescription>{failed[0].error}</AlertDescription>
         </Alert>
       )}
@@ -270,10 +271,10 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
       <Tabs value={tab} onValueChange={setTab}>
         <div className="flex flex-wrap items-center gap-2">
           <TabsList className="h-auto flex-wrap">
-            <TabsTrigger value="kb">知識庫</TabsTrigger>
-            <TabsTrigger value="script">腳本拆解</TabsTrigger>
-            <TabsTrigger value="theory">理論對位{theories.length > 1 && `（${theories.length}）`}</TabsTrigger>
-            <TabsTrigger value="posts">貼文（{posts.length}）</TabsTrigger>
+            <TabsTrigger value="kb">{t('cv.tabKb')}</TabsTrigger>
+            <TabsTrigger value="script">{t('cv.tabScript')}</TabsTrigger>
+            <TabsTrigger value="theory">{theories.length > 1 ? t('cv.tabTheoryN', { n: theories.length }) : t('cv.tabTheory')}</TabsTrigger>
+            <TabsTrigger value="posts">{t('cv.tabPosts', { n: posts.length })}</TabsTrigger>
           </TabsList>
         </div>
 
@@ -282,10 +283,10 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
             <>
               <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="outline" size="sm" disabled={!!run} onClick={startScript}>
-                  <RefreshCw /> {scriptTodo ? `拆解新的 ${scriptTodo} 則並重新整合` : '重新整合'}
+                  <RefreshCw /> {scriptTodo ? t('cv.scriptUpdate', { n: scriptTodo }) : t('cv.regroup')}
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => download(`${creator.name}-腳本拆解.md`, playbook.markdown)}>
-                  <Download /> 下載 Markdown
+                <Button variant="outline" size="sm" onClick={() => download(t('cv.scriptFile', { name: creator.name }), playbook.markdown)}>
+                  <Download /> {t('common.download')}
                 </Button>
               </div>
               <Markdown text={playbook.markdown} tasks={{ checked, toggle }} />
@@ -294,15 +295,13 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon"><FileText /></EmptyMedia>
-                <EmptyTitle>{mine ? '拆解中…' : '拆解這位主播怎麼說'}</EmptyTitle>
+                <EmptyTitle>{mine ? t('cv.scriptBusy') : t('cv.scriptEmptyTitle')}</EmptyTitle>
                 <EmptyDescription>
-                  {mine ? '進度在上方。' : done
-                    ? `分析 hook、腳本結構、CTA 和文案公式，整理成可以直接套用的寫法手冊。用已存的逐字稿，每則約 1 次 AI 請求（共 ${scriptTodo} 則）。`
-                    : '先按「開始萃取」，萃取完成的貼文才能拆解。'}
+                  {mine ? t('cv.progressAbove') : done ? t('cv.scriptEmptyDesc', { n: scriptTodo }) : t('cv.scriptNeedsExtract')}
                 </EmptyDescription>
               </EmptyHeader>
               {!mine && done > 0 && (
-                <Button onClick={startScript} disabled={!!run}><Play /> 開始拆解</Button>
+                <Button onClick={startScript} disabled={!!run}><Play /> {t('cv.scriptStart')}</Button>
               )}
             </Empty>
           )}
@@ -312,8 +311,8 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
           {kb ? (
             <>
               <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={() => download(`${creator.name}-知識庫.md`, kb.markdown)}>
-                  <Download /> 下載 Markdown
+                <Button variant="outline" size="sm" onClick={() => download(t('cv.kbFile', { name: creator.name }), kb.markdown)}>
+                  <Download /> {t('common.download')}
                 </Button>
               </div>
               <Markdown text={kb.markdown} tasks={{ checked, toggle }} />
@@ -322,8 +321,8 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon"><FileText /></EmptyMedia>
-                <EmptyTitle>還沒有知識庫</EmptyTitle>
-                <EmptyDescription>按上方的按鈕開始，處理完會整合成一份知識庫。</EmptyDescription>
+                <EmptyTitle>{t('cv.kbEmptyTitle')}</EmptyTitle>
+                <EmptyDescription>{t('cv.kbEmptyDesc')}</EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}
@@ -334,27 +333,27 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <Select value={theory.topic} onValueChange={setTheoryTopic}>
-                  <SelectTrigger className="w-auto min-w-48" aria-label="理論對位的主題"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-auto min-w-48" aria-label={t('cv.topicSelect')}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {sortedTheories.map((d) => (
-                      <SelectItem key={d.topic} value={d.topic}>{topicLabel(d.topic)}{!d.markdown && '（未完成）'}</SelectItem>
+                      <SelectItem key={d.topic} value={d.topic}>{topicLabel(d.topic)}{!d.markdown && t('cv.unfinished')}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <Button variant="ghost" size="sm" disabled={!!run || done === 0} onClick={() => setDialogTopic('')}>
-                  <Plus /> 新主題
+                  <Plus /> {t('cv.newTopic')}
                 </Button>
                 <div className="ml-auto flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" disabled={!!run} onClick={() => setDialogTopic(theory.topic)}>
-                    <RefreshCw /> {theory.markdown ? '重新產生' : '繼續產生'}
+                    <RefreshCw /> {theory.markdown ? t('cv.regenerate') : t('cv.resume')}
                   </Button>
                   {theory.markdown && (
-                    <Button variant="outline" size="sm" onClick={() => download(`${creator.name}-理論對位-${theory.topic}.md`, theory.markdown!)}>
-                      <Download /> 下載 Markdown
+                    <Button variant="outline" size="sm" onClick={() => download(t('cv.theoryFile', { name: creator.name, topic: topicLabel(theory.topic) }), theory.markdown!)}>
+                      <Download /> {t('common.download')}
                     </Button>
                   )}
                   <Button variant="outline" size="sm" disabled={mine} onClick={() => removeTheory(theory.topic)}>
-                    <Trash2 /> 刪除
+                    <Trash2 /> {t('common.delete')}
                   </Button>
                 </div>
               </div>
@@ -364,9 +363,9 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
                 <Empty>
                   <EmptyHeader>
                     <EmptyMedia variant="icon"><FileText /></EmptyMedia>
-                    <EmptyTitle>{mine ? '產生中…' : '還沒產生完成'}</EmptyTitle>
+                    <EmptyTitle>{mine ? t('cv.generating') : t('cv.notFinished')}</EmptyTitle>
                     <EmptyDescription>
-                      {mine ? '進度在上方。' : '按「繼續產生」，已完成的步驟不會重做。'}
+                      {mine ? t('cv.progressAbove') : t('cv.resumeHint')}
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
@@ -376,14 +375,14 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon"><FileText /></EmptyMedia>
-                <EmptyTitle>把經驗對位到既有理論</EmptyTitle>
+                <EmptyTitle>{t('cv.theoryEmptyTitle')}</EmptyTitle>
                 <EmptyDescription>
                   {done
-                    ? '把這位主播零碎的經驗對位到既有理論，整理成可以照著做的公式。可以指定主題，例如「黃金投資時機」；每個主題一篇，之後在這裡切換。'
-                    : '先按「開始萃取」，萃取完成的貼文才能做理論對位。'}
+                    ? t('cv.theoryEmptyDesc')
+                    : t('cv.theoryNeedsExtract')}
                 </EmptyDescription>
               </EmptyHeader>
-              {done > 0 && <Button onClick={() => setDialogTopic('')} disabled={!!run}><Play /> 開始理論對位</Button>}
+              {done > 0 && <Button onClick={() => setDialogTopic('')} disabled={!!run}><Play /> {t('cv.theoryStart')}</Button>}
             </Empty>
           )}
         </TabsContent>
@@ -392,9 +391,9 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-28">發文日期</TableHead>
-                <TableHead>內容</TableHead>
-                <TableHead className="w-20">狀態</TableHead>
+                <TableHead className="w-28">{t('cv.colDate')}</TableHead>
+                <TableHead>{t('cv.colContent')}</TableHead>
+                <TableHead className="w-20">{t('cv.colStatus')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -404,12 +403,12 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
                   <TableCell className="max-w-0 whitespace-normal">
                     <a className="line-clamp-2 underline-offset-4 hover:underline"
                       href={`https://www.instagram.com/p/${p.code}/`} target="_blank" rel="noreferrer">
-                      {p.digest?.topic ?? (p.caption || '（沒有文案）')}
+                      {p.digest?.topic ?? (p.caption || t('cv.noCaption'))}
                     </a>
                     {p.error && <p className="mt-1 text-xs text-destructive">{p.error}</p>}
                   </TableCell>
                   <TableCell className="align-top">
-                    <Badge variant={STATUS[p.status].variant}>{STATUS[p.status].label}</Badge>
+                    <Badge variant={STATUS[p.status].variant}>{t(STATUS[p.status].label)}</Badge>
                   </TableCell>
                 </TableRow>
               ))}

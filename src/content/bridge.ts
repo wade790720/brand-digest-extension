@@ -1,7 +1,8 @@
 // ISOLATED world：MAIN world 拿不到 chrome.runtime，由這裡把收集到的貼文轉交背景程式。
 // 只接受同一頁面、標記為 brand-digest 的訊息。
 // 收集前先在頁面右下角問使用者：只是進來看一下，不該擅自收集。
-import type { CollectMessage } from '@/types'
+import { browserLang, resolveLang, t, type Lang } from '@/lib/i18n'
+import type { CollectMessage, Settings } from '@/types'
 import { ConsentGate } from './consent'
 
 const gate = new ConsentGate<CollectMessage>()
@@ -30,18 +31,19 @@ setInterval(() => gate.navigate(location.pathname) && hide(), 1000)
 
 async function ask(creator: string) {
   const known = alive() ? ((await chrome.storage.local.get(`creator:${creator}`))[`creator:${creator}`] as { codes: string[] } | undefined) : undefined
+  const lang = await currentLang()
   if (gate.creator !== creator || gate.decision !== 'ask') return // 讀儲存的空檔裡已經離開或回答了
+  const app = t('app.name', {}, lang)
   show(
-    known ? `要繼續收集「${creator}」的新貼文嗎？` : `要收集「${creator}」的貼文嗎？`,
-    known
-      ? `已收集 ${known.codes.length} 則。按「收集」後，這次往下滑看到的新貼文會加進 Instagram 創作者精選。`
-      : '按「收集」後，這次往下滑看到的貼文會存進 Instagram 創作者精選，之後可以整理成知識庫。',
+    lang,
+    known ? t('ig.askMore', { name: creator }, lang) : t('ig.askNew', { name: creator }, lang),
+    known ? t('ig.bodyMore', { n: known.codes.length, app }, lang) : t('ig.bodyNew', { app }, lang),
     [
-      { label: '取消', primary: false, onClick: () => (gate.decline(), hide()) },
+      { label: t('common.cancel', {}, lang), primary: false, onClick: () => (gate.decline(), hide()) },
       {
-        label: '收集', primary: true, onClick: () => {
+        label: t('ig.collect', {}, lang), primary: true, onClick: () => {
           gate.accept().forEach(send)
-          show('已開始收集', '往下滑，看到的貼文會陸續加進來。工具列圖示的數字是已收集的則數。', [])
+          show(lang, t('ig.started', {}, lang), t('ig.startedBody', {}, lang), [])
           const shown = toast
           setTimeout(() => toast === shown && hide(), 3000) // 這 3 秒內換了別的提示就不關
         },
@@ -50,7 +52,13 @@ async function ask(creator: string) {
   )
 }
 
-function show(title: string, body: string, buttons: { label: string; primary: boolean; onClick: () => void }[]) {
+/** 語言跟擴充功能的設定走（沒設就看瀏覽器），每次跳出提示時讀一次 */
+async function currentLang(): Promise<Lang> {
+  const { settings } = alive() ? ((await chrome.storage.local.get('settings')) as { settings?: Settings }) : {}
+  return resolveLang(settings?.lang, browserLang())
+}
+
+function show(lang: Lang, title: string, body: string, buttons: { label: string; primary: boolean; onClick: () => void }[]) {
   hide()
   toast = document.createElement('div')
   const root = toast.attachShadow({ mode: 'closed' }) // 和 IG 的樣式互不影響
@@ -74,14 +82,16 @@ function show(title: string, body: string, buttons: { label: string; primary: bo
     button:hover { filter: brightness(1.15); }
     button:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 2px; }
   </style>
-  <div class="box" role="region" aria-live="polite" aria-label="Instagram 創作者精選">
-    <div class="brand">Instagram 創作者精選</div>
+  <div class="box" role="region" aria-live="polite">
+    <div class="brand"></div>
     <p class="title"></p>
     <p class="body"></p>
     <div class="row"></div>
   </div>`
   root.querySelector('.title')!.textContent = title // 主播帳號用 textContent 放，不經過 innerHTML
   root.querySelector('.body')!.textContent = body
+  root.querySelector('.brand')!.textContent = t('app.name', {}, lang)
+  root.querySelector('.box')!.setAttribute('aria-label', t('app.name', {}, lang))
   for (const b of buttons) {
     const el = document.createElement('button')
     el.textContent = b.label

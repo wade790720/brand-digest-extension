@@ -6,12 +6,13 @@
 //   3. 組裝：每個理論把多則碎片合成公式，附理論機制與適用條件，最後一份總結
 // 另外用程式算「飽和曲線」：依發文時間，第幾則之後就不再出現新觀念。
 
+import { getLang, t, type Lang } from '@/lib/i18n'
 import { generate, inputBudget, parseJson } from '@/lib/llm'
 import { cachedCaller, keptPosts, sourceIndex, stripFence, type Progress } from '@/lib/pipeline'
 import { getSettings, saveTheory } from '@/lib/store'
 import type { Creator, Theory } from '@/types'
 
-const SKELETON_SYSTEM = '你是行銷、銷售心理學與溝通理論的專家。一律使用繁體中文，只回傳 JSON。'
+const skeletonSystem = (lang: Lang) => `你是行銷、銷售心理學與溝通理論的專家。${t('ai.lang', {}, lang)}只回傳 JSON。`
 
 const skeletonUser = (topic: string, topics: string) => `我要研究一位創作者在「${topic}」上的經驗。以下是這位創作者各則內容的主題：
 ${topics}
@@ -20,8 +21,8 @@ ${topics}
 每個理論拆 2–4 條子原則。回傳 JSON：
 {"theories":[{"name":"理論名稱","source":"提出者或來源","claim":"一句話核心主張","principles":["子原則，一句話"]}]}`
 
-const MAP_SYSTEM = `你負責把創作者的零碎經驗對位到理論上。判斷要嚴格：只有機制真的相同才算對位。
-一律使用繁體中文，只回傳 JSON。`
+const mapSystem = (lang: Lang) => `你負責把創作者的零碎經驗對位到理論上。判斷要嚴格：只有機制真的相同才算對位。
+${t('ai.lang', {}, lang)}只回傳 JSON。`
 
 const mapUser = (skeleton: string, fragments: string) => `【理論骨架】每行「子原則id 名稱」
 ${skeleton}
@@ -36,38 +37,38 @@ ${fragments}
 規則：一條碎片可以對位多個子原則；對不上任何子原則的，相近的歸成同一個 unique 群組；
 純技術細節或太空泛的碎片可以略過。`
 
-const SYNTH_SYSTEM = `你是知識體系建構專家，擅長把零碎經驗組成可以照著做的公式。
-一律使用繁體中文，輸出 Markdown，不要包程式碼圍欄。`
+const synthSystem = (lang: Lang) => `你是知識體系建構專家，擅長把零碎經驗組成可以照著做的公式。
+${t('ai.lang', {}, lang)}輸出 Markdown，不要包程式碼圍欄。`
 
 // 組裝拆成「每個理論一次」＋「總結一次」：單次請求小，免費方案（例如 Groq 每分鐘 8000 token）也跑得動
 const CITE_RULE = '[編號] 是「則編號」（碎片id 橫線前的數字），只能用資料裡出現過的，例如 [3][17]。'
 
-const theoryUser = (creator: string, topic: string, t: Theory, mapped: string) =>
-  `創作者「${creator}」在「${topic}」上的經驗，已經對位到「${t.name}」（${t.source}）。
-從「### ${t.name}」開始輸出。每個子原則寫成：
+const theoryUser = (creator: string, topic: string, th: Theory, mapped: string, lang: Lang) =>
+  `創作者「${creator}」在「${topic}」上的經驗，已經對位到「${th.name}」（${th.source}）。
+從「### ${th.name}」開始輸出。每個子原則寫成（粗體標籤文字照抄）：
 **子原則名稱**
-- 公式：可以照著做的步驟（1. 2. 3.）
-- 創作者怎麼說：整合多則碎片的具體做法，標出處 [編號]
-- 為什麼有效：理論機制，一到兩句
-- 適用條件：什麼情況下用、什麼情況會失效
+- ${t('theory.fFormula', {}, lang)}：可以照著做的步驟（1. 2. 3.）
+- ${t('theory.fHow', {}, lang)}：整合多則碎片的具體做法，標出處 [編號]
+- ${t('theory.fWhy', {}, lang)}：理論機制，一到兩句
+- ${t('theory.fWhen', {}, lang)}：什麼情況下用、什麼情況會失效
 ${CITE_RULE}
 
 【對位到這個理論的碎片】
 ${mapped}`
 
-const summaryUser = (creator: string, topic: string, nodes: string, unique: string, conflicts: string, gaps: string) =>
-  `創作者「${creator}」在「${topic}」上的經驗已對位到理論。輸出以下章節（## 標題）：
+const summaryUser = (creator: string, topic: string, nodes: string, unique: string, conflicts: string, gaps: string, lang: Lang) =>
+  `創作者「${creator}」在「${topic}」上的經驗已對位到理論。輸出以下章節（## 標題，標題文字照抄）：
 
-## 一句話總結
+## ${t('theory.hSummary', {}, lang)}
 用一個公式或流程，串起創作者最常講的節點（括號內是碎片數，越多代表越常講）。
 
-## 獨門心法
+## ${t('theory.hUnique', {}, lang)}
 理論沒涵蓋、創作者自己的觀念。每條寫：觀念、創作者的做法 [編號]、你推測它為什麼有效。
 
-## 和理論不一樣的地方
-沒有就寫「無」。
+## ${t('theory.hDiff', {}, lang)}
+沒有就寫「${t('common.none', {}, lang)}」。
 
-## 沒講到的
+## ${t('theory.hMissing', {}, lang)}
 下面沒有任何碎片對應的子原則，挑最值得補的 3 條，各一句說明為什麼值得補。
 ${CITE_RULE}
 
@@ -111,7 +112,7 @@ export function textToSkeleton(text: string): Theory[] {
       raw.push({ name: name.trim(), source: rest.join('｜').trim(), principles: [] })
     }
   }
-  if (!raw.length) throw new Error('理論骨架是空的，至少要有一個理論。')
+  if (!raw.length) throw new Error(t('theory.empty'))
   return raw.map((t, i) => ({
     id: `T${i + 1}`, name: t.name, source: t.source,
     principles: (t.principles.length ? t.principles : [t.name]).map((name, j) => ({ id: `T${i + 1}.${j + 1}`, name })),
@@ -147,11 +148,11 @@ export function saturation(takenAt: number[], m: Mapping): number[] {
   return order.map((n) => (concepts.get(String(n))?.forEach((c) => seen.add(c)), seen.size))
 }
 
-export function saturationNote(curve: number[]) {
+export function saturationNote(curve: number[], lang: Lang = getLang()) {
   const last = curve[curve.length - 1]
   if (!last) return ''
   const at80 = curve.findIndex((c) => c >= last * 0.8) + 1
-  return `_飽和度：依發文時間，前 ${at80} 則（${Math.floor((at80 * 100) / curve.length)}%）就涵蓋了 80% 的觀念；全部 ${curve.length} 則共 ${last} 個觀念。_`
+  return `_${t('theory.saturation', { at80, pct: Math.floor((at80 * 100) / curve.length), n: curve.length, last }, lang)}_`
 }
 
 /** AI 回的對位 JSON 欄位可能缺、型別可能不對，整理成固定格式 */
@@ -179,29 +180,35 @@ export function fit(lines: string[], max: number) {
 
 // —— 呼叫 AI 的部分 ——
 
+/** 不填主題時存的是「全部內容」（資料裡的固定值），給 AI 和文件看的要換成目前語言 */
+const topicName = (topic: string, lang: Lang) => (topic === '全部內容' ? t('theory.all', {}, lang) : topic)
+
 /** 請 AI 依主題提出理論骨架。不存檔：使用者確認或修改後才存。 */
 export async function proposeSkeleton(creator: Creator, topic: string): Promise<Theory[]> {
   const settings = await getSettings()
   const { use } = await keptPosts(creator)
-  if (!use.length) throw new Error(`「${creator.name}」還沒有任何萃取結果，請先萃取幾則貼文。`)
+  if (!use.length) throw new Error(t('theory.noDigest', { name: creator.name }))
   const topics = fit(use.map((p) => `- ${p.digest!.topic}`), inputBudget(settings.provider) - 600)
-  const data = parseJson(await generate(settings, SKELETON_SYSTEM, skeletonUser(topic, topics), { json: true }))
+  const lang = getLang()
+  const data = parseJson(await generate(settings, skeletonSystem(lang), skeletonUser(topicName(topic, lang), topics), { json: true }))
   const list = Array.isArray(data) ? data : data?.theories
-  if (!Array.isArray(list) || !list.length) throw new Error('AI 回傳的理論骨架格式不對，請再試一次，或到設定換一個模型。')
+  if (!Array.isArray(list) || !list.length) throw new Error(t('theory.badSkeleton'))
   // 走一次文字格式：順便編好 id、補上沒列子原則的理論
-  return textToSkeleton(list.map((t: any) => [
-    `${t?.name ?? ''}${t?.source ? `｜${t.source}` : ''}`,
-    ...(Array.isArray(t?.principles) ? t.principles : []).map((p: any) => `- ${typeof p === 'string' ? p : p?.name ?? ''}`),
+  return textToSkeleton(list.map((th: any) => [
+    `${th?.name ?? ''}${th?.source ? `｜${th.source}` : ''}`,
+    ...(Array.isArray(th?.principles) ? th.principles : []).map((p: any) => `- ${typeof p === 'string' ? p : p?.name ?? ''}`),
   ].join('\n')).join('\n\n'))
 }
 
 /** 產生理論對位版並存檔。每次 AI 回應都先暫存，額度在半路用完時，下次從停下的地方繼續。 */
 export async function buildTheory(creator: Creator, topic: string, skeleton: Theory[], signal: AbortSignal, onProgress: (p: Progress) => void) {
   const settings = await getSettings()
+  const lang = getLang() // 這次產出的語言：開始時的介面語言
+  const shownTopic = topicName(topic, lang)
   const { use } = await keptPosts(creator)
   const frags: Record<string, string> = {}
   use.forEach((p, i) => p.digest!.points.forEach((g, j) => (frags[`${i + 1}-${j + 1}`] = g)))
-  if (!Object.keys(frags).length) throw new Error(`「${creator.name}」還沒有任何知識點，請先萃取幾則貼文。`)
+  if (!Object.keys(frags).length) throw new Error(t('theory.noPoints', { name: creator.name }))
 
   const budget = inputBudget(settings.provider)
   const skText = skeleton.map((t) => [`${t.id} ${t.name}`, ...t.principles.map((p) => `  ${p.id} ${p.name}`)].join('\n')).join('\n')
@@ -225,11 +232,11 @@ export async function buildTheory(creator: Creator, topic: string, skeleton: The
   const m: Mapping = { mapped: {}, unique: [], conflicts: [] }
   for (const [i, b] of batches.entries()) {
     if (signal.aborted) return
-    const status = `理論對位：第 ${i + 1}/${batches.length} 批碎片…`
+    const status = t('theory.mapBatch', { i: i + 1, n: batches.length })
     say(status)
     const user = mapUser(skText, b.join('\n'))
-    const raw = parseJson(await ask(status, MAP_SYSTEM, user, true))
-    if (!raw) await cached.forget(MAP_SYSTEM, user) // 格式壞掉：這批略過，下次重新問
+    const raw = parseJson(await ask(status, mapSystem(lang), user, true))
+    if (!raw) await cached.forget(mapSystem(lang), user) // 格式壞掉：這批略過，下次重新問
     const part = toMapping(raw)
     for (const [node, ids] of Object.entries(part.mapped)) (m.mapped[node] ??= []).push(...ids)
     m.unique.push(...part.unique)
@@ -245,21 +252,21 @@ export async function buildTheory(creator: Creator, topic: string, skeleton: The
   const uniqueIds = m.unique.flatMap((g) => g.ids).filter((f) => frags[f])
   if (!Object.values(hits).some((ids) => ids.length) && !uniqueIds.length) {
     await cached.clear()
-    throw new Error('AI 回傳的對位結果是空的或格式不對，請再試一次，或到設定換一個模型。')
+    throw new Error(t('theory.badMap'))
   }
 
-  const mine = skeleton.map((t) => ({ t, ps: t.principles.filter((p) => hits[p.id]?.length) })).filter((x) => x.ps.length)
+  const mine = skeleton.map((th) => ({ th, ps: th.principles.filter((p) => hits[p.id]?.length) })).filter((x) => x.ps.length)
   total = batches.length + mine.length + 1
   const sections: string[] = []
-  for (const [i, { t, ps }] of mine.entries()) {
+  for (const [i, { th, ps }] of mine.entries()) {
     if (signal.aborted) return
     // ponytail: 碎片太多送不進一次請求時，每個子原則截掉後面的碎片；要全收就得再分批組裝
     let cap = Math.max(...ps.map((p) => hits[p.id].length))
     const mapped = () => ps.map((p) => `[${p.name}]\n${hits[p.id].slice(0, cap).map((f) => `  - ${f}：${frags[f]}`).join('\n')}`).join('\n')
     while (cap > 3 && mapped().length > budget - 1200) cap = Math.floor(cap * 0.8)
-    const status = `組裝：${t.name}（${i + 1}/${mine.length}）…`
+    const status = t('theory.synth', { name: th.name, i: i + 1, n: mine.length })
     say(status)
-    sections.push(cleanMd(await ask(status, SYNTH_SYSTEM, theoryUser(creator.name, topic, t, mapped())), true))
+    sections.push(cleanMd(await ask(status, synthSystem(lang), theoryUser(creator.name, shownTopic, th, mapped(), lang)), true))
     step++
   }
 
@@ -270,19 +277,23 @@ export async function buildTheory(creator: Creator, topic: string, skeleton: The
   const unique = m.unique.map((g) => [`- ${g.point}`, ...g.ids.filter((f) => frags[f]).map((f) => `  - ${f}：${frags[f]}`)].join('\n'))
   const conflicts = m.conflicts.map((c) => `- [${c.node}] ${c.note}（${c.ids.join(', ')}）`)
   const gaps = Object.keys(names).filter((n) => !hits[n]?.length).map((n) => `- ${names[n]}`)
-  say('組裝：總結…')
-  const summary = cleanMd(await ask('組裝：總結…', SYNTH_SYSTEM, summaryUser(creator.name, topic,
-    fit(nodes, room2), fit(unique, room2) || '（無）', fit(conflicts, room2) || '（無）', fit(gaps, 1500) || '（無）')))
+  say(t('theory.summaryStep'))
+  const summary = cleanMd(await ask(t('theory.summaryStep'), synthSystem(lang), summaryUser(creator.name, shownTopic,
+    fit(nodes, room2), fit(unique, room2) || '（無）', fit(conflicts, room2) || '（無）', fit(gaps, 1500) || '（無）', lang)))
 
-  const [head, ...tail] = summary.split('## 獨門心法')
-  const md = `${head.trim()}\n\n## 理論對位：原來在說這個\n\n${sections.join('\n\n')}` +
-    (tail.length ? `\n\n## 獨門心法${tail.join('## 獨門心法')}` : '')
+  // 總結裡「獨門心法」之前的段落放最前面，理論小節插在中間（標題用這次產出的語言）
+  const uniqueH = `## ${t('theory.hUnique', {}, lang)}`
+  const [head, ...tail] = summary.split(uniqueH)
+  const md = `${head.trim()}\n\n## ${t('theory.hMapped', {}, lang)}\n\n${sections.join('\n\n')}` +
+    (tail.length ? `\n\n${uniqueH}${tail.join(uniqueH)}` : '')
   const used = new Set([...Object.values(hits).flat(), ...uniqueIds])
-  const stats = `_理論對位版｜主題：${topic}｜${use.length} 則、${Object.keys(frags).length} 條碎片，${used.size} 條掛上理論或獨門心法；` +
-    `${Object.keys(names).length} 個子原則中 ${Object.keys(names).length - gaps.length} 個有對應。_`
-  const note = saturationNote(saturation(use.map((p) => p.takenAt), { ...m, mapped: hits }))
+  const stats = `_${t('theory.stats', {
+    topic: shownTopic, posts: use.length, frags: Object.keys(frags).length, used: used.size,
+    principles: Object.keys(names).length, hit: Object.keys(names).length - gaps.length,
+  }, lang)}_`
+  const note = saturationNote(saturation(use.map((p) => p.takenAt), { ...m, mapped: hits }), lang)
 
-  await saveTheory(creator.name, { topic, skeleton, markdown: `${stats}\n\n${note}\n\n${md}\n\n${sourceIndex(use)}\n`, updatedAt: Date.now() })
+  await saveTheory(creator.name, { topic, skeleton, markdown: `${stats}\n\n${note}\n\n${md}\n\n${sourceIndex(use, lang)}\n`, updatedAt: Date.now() })
   await cached.clear()
-  onProgress({ done: total, total, status: '完成' })
+  onProgress({ done: total, total, status: t('common.done') })
 }

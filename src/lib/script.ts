@@ -3,6 +3,7 @@
 // 2. 數據表：程式依 hook 類型算平均播放、按讚，不交給 AI 算
 // 3. 整合：AI 把所有拆解歸納成這位主播的寫法手冊，附可以直接套用的模板
 
+import { getLang, hookTypeLabel, t, type Key, type Lang } from '@/lib/i18n'
 import { LlmError, generate, inputBudget, parseJson } from '@/lib/llm'
 import { cachedCaller, sourceIndex, stripFence, type Progress } from '@/lib/pipeline'
 import { getPosts, getSettings, savePlaybook, savePost } from '@/lib/store'
@@ -11,8 +12,8 @@ import type { Creator, Post, ScriptBreakdown } from '@/types'
 export const HOOK_TYPES = ['提問', '反常識', '數字清單', '痛點', '故事開場', '身分喊話', '結果先行', '爭議觀點', '其他']
 const CTA_TYPES = ['留言關鍵字', '追蹤', '私訊', '點連結', '分享收藏', '購買', '無']
 
-const BREAKDOWN_SYSTEM = `你是短影音腳本與文案分析師。只分析「怎麼說」：結構、話術、說服手法，不整理知識內容。
-一律使用繁體中文，只回傳 JSON。`
+const breakdownSystem = (lang: Lang) => `你是短影音腳本與文案分析師。只分析「怎麼說」：結構、話術、說服手法，不整理知識內容。
+${t('ai.lang', {}, lang)}只回傳 JSON。hookType 和 ctaType 一定照抄下面清單裡的中文原字，不要翻譯（程式用它統計）。`
 
 const breakdownUser = (caption: string, transcript: string) => `分析這則短影音的腳本與文案寫法，回傳 JSON：
 {
@@ -31,33 +32,36 @@ ${transcript.trim() || '（無）'}
 【貼文文字】
 ${caption.trim() || '（無）'}`
 
-const PLAYBOOK_SYSTEM = `你是短影音內容策略顧問，擅長從一位創作者的大量作品歸納出可以複製的寫法。
-一律使用繁體中文，輸出 Markdown，不要包程式碼圍欄。`
+const playbookSystem = (lang: Lang) => `你是短影音內容策略顧問，擅長從一位創作者的大量作品歸納出可以複製的寫法。
+${t('ai.lang', {}, lang)}輸出 Markdown，不要包程式碼圍欄。`
 
-const SECTIONS = `章節固定為（用 ## 標題）：
+const sections = (lang: Lang) => {
+  const h = (k: Key) => t(k, {}, lang)
+  return `章節固定為（用 ## 標題，標題文字照抄）：
 
-## 一句話總結
-## Hook 模式
-## 腳本結構模板
-## CTA 與文案公式
-## 說服手法
-## 可以照做的清單
+## ${h('script.hSummary')}
+## ${h('script.hHooks')}
+## ${h('script.hStructure')}
+## ${h('script.hCta')}
+## ${h('script.hPersuasion')}
+## ${h('script.hTodo')}
 
 要求：
-- 「Hook 模式」：歸納 3–5 種，每種寫：名稱、為什麼有效、原句範例 [編號]、可以直接套用的填空模板（例如「你知道為什麼＿＿＿嗎？」）。
-- 「腳本結構模板」：1–3 種，用 → 串起各段，寫出適用情境，附範例 [編號]。
+- 「${h('script.hHooks')}」：歸納 3–5 種，每種寫：名稱、為什麼有效、原句範例 [編號]、可以直接套用的填空模板（例如「你知道為什麼＿＿＿嗎？」）。
+- 「${h('script.hStructure')}」：1–3 種，用 → 串起各段，寫出適用情境，附範例 [編號]。
 - 有播放數（plays）或按讚數（likes）時，優先歸納表現好的作品，並說明依據。沒有數字就不要編。
-- 「可以照做的清單」用勾選框格式（- [ ]）。
+- 「${h('script.hTodo')}」用勾選框格式（- [ ]）。
 - 出處一律寫成 [編號]，例如 [10] 或 [3][7]，不要寫成 n10、【n10】。編號只能用資料裡出現過的 n 值。`
+}
 
-const playbookUser = (creator: string, count: number, items: string) =>
-  `以下是「${creator}」共 ${count} 則短影音的腳本拆解（JSON，每則有 n 編號）。請歸納成一份「寫法手冊」，${SECTIONS}
+const playbookUser = (creator: string, count: number, items: string, lang: Lang) =>
+  `以下是「${creator}」共 ${count} 則短影音的腳本拆解（JSON，每則有 n 編號）。請歸納成一份「寫法手冊」，${sections(lang)}
 
 【各則拆解】
 ${items}`
 
-const mergeUser = (creator: string, parts: string[]) =>
-  `以下是「${creator}」的寫法手冊，因為作品太多分成 ${parts.length} 批整理。請合併成一份，相同的模式合併成一條、保留所有 [編號]，${SECTIONS}
+const mergeUser = (creator: string, parts: string[], lang: Lang) =>
+  `以下是「${creator}」的寫法手冊，因為作品太多分成 ${parts.length} 批整理。請合併成一份，相同的模式合併成一條、保留所有 [編號]，${sections(lang)}
 
 ${parts.map((p, i) => `【第 ${i + 1} 批】\n${p}`).join('\n\n')}`
 
@@ -92,33 +96,34 @@ export function hookStats(posts: Post[]) {
 }
 
 /** 數據表 Markdown。沒有任何互動數字就回傳空字串 */
-export function statsTable(rows: ReturnType<typeof hookStats>) {
+export function statsTable(rows: ReturnType<typeof hookStats>, lang: Lang = getLang()) {
   if (!rows.some((r) => r.plays !== undefined || r.likes !== undefined)) return ''
   const n = (v?: number) => (v === undefined ? '—' : v.toLocaleString('zh-TW'))
   return [
-    '## 數據：哪種 Hook 表現最好',
+    `## ${t('script.statsHeading', {}, lang)}`,
     '',
-    '| Hook 類型 | 則數 | 平均播放 | 平均按讚 |',
+    t('script.statsHead', {}, lang),
     '|---|---|---|---|',
-    ...rows.map((r) => `| ${r.type} | ${r.count} | ${n(r.plays)} | ${n(r.likes)} |`),
+    ...rows.map((r) => `| ${hookTypeLabel(r.type, lang)} | ${r.count} | ${n(r.plays)} | ${n(r.likes)} |`),
     '',
-    '_數字是收集當下 IG 顯示的數字。則數少的類型參考價值低。_',
+    `_${t('script.statsNote', {}, lang)}_`,
   ].join('\n')
 }
 
 /** 逐則拆解（已拆過的跳過），再整合成寫法手冊並存檔。額度或金鑰問題會停下整批（拋出 LlmError） */
 export async function buildPlaybook(creator: Creator, signal: AbortSignal, onProgress: (p: Progress) => void) {
   const settings = await getSettings()
+  const lang = getLang() // 這次產出的語言：開始時的介面語言
   const posts = (await getPosts(creator)).filter((p) => p.status === 'done' && (p.transcript || p.caption))
-  if (!posts.length) throw new Error(`「${creator.name}」還沒有萃取完成的貼文，請先按「開始萃取」。`)
+  if (!posts.length) throw new Error(t('script.noPosts', { name: creator.name }))
   const todo = posts.filter((p) => !p.script)
 
   for (const [i, p] of todo.entries()) {
     if (signal.aborted) return
-    const label = `腳本拆解：第 ${i + 1}/${todo.length} 則`
+    const label = t('script.label', { i: i + 1, n: todo.length })
     onProgress({ done: i, total: todo.length + 1, status: `${label}…` })
     try {
-      const raw = await generate(settings, BREAKDOWN_SYSTEM, breakdownUser(p.caption, p.transcript ?? ''), {
+      const raw = await generate(settings, breakdownSystem(lang), breakdownUser(p.caption, p.transcript ?? ''), {
         json: true, onWait: (m) => onProgress({ done: i, total: todo.length + 1, status: `${label}：${m}` }),
       })
       const b = toBreakdown(parseJson(raw))
@@ -130,7 +135,7 @@ export async function buildPlaybook(creator: Creator, signal: AbortSignal, onPro
   if (signal.aborted) return
 
   const use = (await getPosts(creator)).filter((p) => p.script)
-  if (!use.length) throw new Error('沒有任何一則拆解成功，請再試一次，或到設定換一個模型。')
+  if (!use.length) throw new Error(t('script.noneOk'))
   const items = use.map((p, i) => ({
     n: i + 1,
     hookType: p.script!.hookType,
@@ -157,29 +162,29 @@ export async function buildPlaybook(creator: Creator, signal: AbortSignal, onPro
   const cached = await cachedCaller(`script:${creator.name}`, settings)
   const ask = (status: string, user: string) => {
     onProgress({ done: step, total, status })
-    return cached.call(PLAYBOOK_SYSTEM, user, { onWait: (m) => onProgress({ done: step, total, status: `${status}${m}` }) })
+    return cached.call(playbookSystem(lang), user, { onWait: (m) => onProgress({ done: step, total, status: `${status}${m}` }) })
   }
 
   let parts: string[] = []
   for (const [i, b] of batches.entries()) {
     if (signal.aborted) return
-    const status = batches.length > 1 ? `整合寫法手冊：第 ${i + 1}/${batches.length} 批…` : '整合寫法手冊…'
-    parts.push(stripFence(await ask(status, playbookUser(creator.name, b.length, JSON.stringify(b)))))
+    const status = batches.length > 1 ? t('script.batch', { i: i + 1, n: batches.length }) : t('script.building')
+    parts.push(stripFence(await ask(status, playbookUser(creator.name, b.length, JSON.stringify(b), lang))))
     step++
   }
   // ponytail: 分批結果合併一次就好；一次合不下就直接接起來（同知識庫的上限），要更好請換上限大的模型
   if (parts.length > 1) {
-    const merged = parts.join('').length <= budget ? stripFence(await ask('合併分批結果…', mergeUser(creator.name, parts))) : null
+    const merged = parts.join('').length <= budget ? stripFence(await ask(t('script.merge'), mergeUser(creator.name, parts, lang))) : null
     parts = [merged ?? parts.join('\n\n')]
   }
 
-  const table = statsTable(hookStats(use))
-  const note = `_共 ${use.length} 則的腳本拆解。這份只分析寫法，知識內容在「知識庫」分頁。_`
+  const table = statsTable(hookStats(use), lang)
+  const note = `_${t('script.note', { n: use.length }, lang)}_`
   await savePlaybook(creator.name, {
-    markdown: [note, table, parts[0], sourceIndex(use)].filter(Boolean).join('\n\n') + '\n',
+    markdown: [note, table, parts[0], sourceIndex(use, lang)].filter(Boolean).join('\n\n') + '\n',
     updatedAt: Date.now(),
     postCount: use.length,
   })
   await cached.clear()
-  onProgress({ done: total, total, status: '完成' })
+  onProgress({ done: total, total, status: t('common.done') })
 }

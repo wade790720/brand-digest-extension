@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { t } from '@/lib/i18n'
 import { getTheories, saveTheory } from '@/lib/store'
 import { proposeSkeleton, skeletonToText, textToSkeleton } from '@/lib/theory'
 import type { Creator, Theory } from '@/types'
@@ -74,23 +75,23 @@ export function TheoryDialog({ creator, open, initialTopic, onOpenChange, onStar
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>產生理論對位版</DialogTitle>
+          <DialogTitle>{t('theory.dialogTitle')}</DialogTitle>
           <DialogDescription>
-            把 {creator.name} 零碎的經驗對位到既有理論，整理成可以照著做的公式。會另外多一篇，不會覆蓋知識庫。
+            {t('theory.dialogDesc', { name: creator.name })}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-2">
-          <Label htmlFor="theory-topic">想學的主題（可以不填）</Label>
-          <Input id="theory-topic" placeholder={`例如：黃金投資時機。不填就用「${ALL}」`} value={topic} disabled={busy || text !== null}
+          <Label htmlFor="theory-topic">{t('theory.topicLabel')}</Label>
+          <Input id="theory-topic" placeholder={t('theory.topicPlaceholder', { all: t('theory.all') })} value={topic} disabled={busy || text !== null}
             onChange={(e) => setTopic(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && text === null && propose(false)} />
         </div>
 
         {text !== null && (
           <div className="grid gap-2">
-            <Label htmlFor="theory-skeleton">確認理論骨架{saved && '（這是你上次確認過的版本）'}</Label>
+            <Label htmlFor="theory-skeleton">{t('theory.skeletonLabel')}{saved && t('theory.skeletonSaved')}</Label>
             <p className="text-xs text-muted-foreground">
-              刪掉不相關的理論，補上漏掉的，再按「開始產生」。格式：一行寫「理論名稱｜出處」，底下每行寫「- 子原則」，理論之間空一行。
+              {t('theory.skeletonHelp')}
             </p>
             <textarea id="theory-skeleton" rows={14} value={text} onChange={(e) => setText(e.target.value)}
               className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30" />
@@ -102,14 +103,14 @@ export function TheoryDialog({ creator, open, initialTopic, onOpenChange, onStar
         <DialogFooter>
           {text === null ? (
             <Button onClick={() => propose(false)} disabled={busy}>
-              {busy ? <><Loader2 className="animate-spin" /> AI 思考中（約 20 秒）…</> : '請 AI 提出理論骨架'}
+              {busy ? <><Loader2 className="animate-spin" /> {t('theory.thinkingLong')}</> : t('theory.propose')}
             </Button>
           ) : (
             <>
               <Button variant="outline" onClick={() => propose(true)} disabled={busy}>
-                {busy ? <><Loader2 className="animate-spin" /> AI 思考中…</> : '請 AI 重新提一次'}
+                {busy ? <><Loader2 className="animate-spin" /> {t('theory.thinking')}</> : t('theory.proposeAgain')}
               </Button>
-              <Button onClick={start} disabled={busy}>開始產生</Button>
+              <Button onClick={start} disabled={busy}>{t('theory.generate')}</Button>
             </>
           )}
         </DialogFooter>
