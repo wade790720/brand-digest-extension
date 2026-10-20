@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileText, Loader2, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
+import { Download, ExternalLink, X, FileText, Loader2, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -13,11 +13,12 @@ import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { deleteTheory, getChecks, getKnowledgeBase, getPlaybook, getPosts, getTheories, onStoreChange, saveChecks } from '@/lib/store'
+import { deleteTheory, getChecks, getKnowledgeBase, getPlaybook, getPosts, getSettings, getTheories, onStoreChange, saveChecks, saveSettings } from '@/lib/store'
 import { linkCites } from '@/lib/cites'
 import { getLang, t, valueLabel, type Key } from '@/lib/i18n'
 import { taskKey, taskKeys } from '@/lib/tasks'
 import { download } from '@/lib/utils'
+import { CLASSROOM_URL, CLUB_URL } from '@/lib/links'
 import type { Creator, KnowledgeBase, Playbook, Post, Theory, TheoryDoc } from '@/types'
 
 const STATUS: Record<Post['status'], { label: Key; variant: 'secondary' | 'default' | 'destructive' }> = {
@@ -118,6 +119,7 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   const [theoryTopic, setTheoryTopic] = useState<string | null>(null) // 理論對位分頁裡選中的主題；null＝最新的一篇
   const [dialogTopic, setDialogTopic] = useState<string | null>(null) // null＝對話框關著
   const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [clubDismissed, setClubDismissed] = useState(true) // 讀到設定前先不顯示，免得閃一下
 
   const load = useCallback(async () => {
     setPosts(await getPosts(creator))
@@ -125,6 +127,7 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
     setTheories(Object.values(await getTheories(creator.name)))
     setPlaybook(await getPlaybook(creator.name))
     setChecked(new Set(await getChecks(creator.name)))
+    setClubDismissed(!!(await getSettings()).clubDismissed)
   }, [creator])
   useEffect(() => {
     load()
@@ -161,6 +164,12 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   const sortedTheories = [...theories].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
   const theory = sortedTheories.find((d) => d.topic === theoryTopic) ?? sortedTheories[0]
   const topicLabel = (topic: string) => (topic === ALL ? t('theory.allLabel') : topic)
+
+  // 知識庫上方的俱樂部提示：按關閉就存起來，之後所有主播都不再出現
+  async function dismissClub() {
+    setClubDismissed(true)
+    await saveSettings({ ...(await getSettings()), clubDismissed: true })
+  }
 
   async function removeTheory(topic: string) {
     if (!confirm(t('cv.deleteTheory', { topic: topicLabel(topic) }))) return
@@ -315,7 +324,19 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
                   <Download /> {t('common.download')}
                 </Button>
               </div>
+              {!clubDismissed && (
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm text-muted-foreground">
+                  <span className="min-w-0 flex-1">{t('club.pitch')}</span>
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={CLUB_URL} target="_blank" rel="noreferrer">{t('club.visit')} <ExternalLink /></a>
+                  </Button>
+                  <Button variant="ghost" size="icon-xs" aria-label={t('club.dismiss')} onClick={dismissClub}><X /></Button>
+                </div>
+              )}
               <Markdown text={kb.markdown} tasks={{ checked, toggle }} />
+              <p className="text-sm text-muted-foreground">
+                <a href={CLASSROOM_URL} target="_blank" rel="noreferrer" className="underline">{t('cv.nextStep')}</a>
+              </p>
             </>
           ) : (
             <Empty>

@@ -91,6 +91,7 @@ export interface Settings {
   provider: Provider
   keys: Partial<Record<Provider, string>>
   models: Record<Provider, string>
+  clubDismissed?: boolean // 知識庫上方的百寶袋俱樂部提示，按過關閉就不再出現
   lang?: LangSetting // 介面和 AI 產出的語言；沒有或 auto 就跟著瀏覽器
 }
 

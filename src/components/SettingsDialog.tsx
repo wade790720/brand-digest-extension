@@ -1,4 +1,4 @@
-import { Download, Upload } from 'lucide-react'
+import { Download, ExternalLink, Upload } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { browserLang, getLang, resolveLang, setLang, t, type LangSetting } from '@/lib/i18n'
+import { CLUB_URL } from '@/lib/links'
 import { PROVIDER_NAMES } from '@/lib/llm'
 import { DEFAULT_SETTINGS, MODEL_OPTIONS, exportAll, getModelStatus, getSettings, importAll, saveSettings } from '@/lib/store'
 import { download } from '@/lib/utils'
@@ -178,6 +179,16 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               onChange={(e) => importBackup(e.target.files?.[0])} />
             <ReportProblem lang={getLang() === 'en' ? 'en' : 'zh'} />
           </div>
+        </div>
+
+        <Separator />
+
+        {/* 百寶袋俱樂部：工具免費，給想學更多的人一個去處。低調，不搶主要操作 */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+          <span>{t('club.pitch')}</span>
+          <Button variant="outline" size="sm" asChild>
+            <a href={CLUB_URL} target="_blank" rel="noreferrer">{t('club.visit')} <ExternalLink /></a>
+          </Button>
         </div>
 
         <DialogFooter>
