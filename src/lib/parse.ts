@@ -34,6 +34,13 @@ export function statsOf(it: Item): Post['stats'] {
   return Object.values(s).some((v) => v !== undefined) ? s : undefined
 }
 
+/** 縮圖網址：寬度至少 150 的候選圖裡最小的一張（輪播貼文用第一張）；都不到 150 就用最大的 */
+export function thumbUrlOf(it: Item): string | undefined {
+  const list: Item[] = (it.image_versions2 ?? it.carousel_media?.[0]?.image_versions2)?.candidates ?? []
+  const c = list.filter((x) => typeof x?.url === 'string').sort((a, b) => (a.width ?? 0) - (b.width ?? 0))
+  return (c.find((x) => x.width >= 150) ?? c.at(-1))?.url
+}
+
 /** 從 IG 頁面自己收到的 graphql 回應中，挑出這位主播的貼文。
  *  回應格式不固定，所以遞迴找「有 code 和 media_type 的物件」。 */
 export function extractPosts(json: unknown, creator: string): CollectMessage | null {
@@ -64,6 +71,7 @@ export function extractPosts(json: unknown, creator: string): CollectMessage | n
       audioUrl: audioUrlOf(it.video_dash_manifest),
       videoUrl: it.video_versions?.[0]?.url,
       ...(statsOf(it) && { stats: statsOf(it) }), // 沒有數字就不帶這個欄位，免得合併時蓋掉之前存的
+      ...(thumbUrlOf(it) && { thumbUrl: thumbUrlOf(it) }),
     })),
   }
 }

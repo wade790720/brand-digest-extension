@@ -48,6 +48,28 @@ async function download(p: Post): Promise<Blob> {
   return res.blob()
 }
 
+/** 下載縮圖，縮成 160px 寬的 JPEG 存在貼文上。之後顯示都用這份，不再向 IG 要圖。
+ *  失敗（網址過期、格式不支援）就算了：拆解畫面會顯示色塊，不影響萃取 */
+async function saveThumb(p: Post) {
+  if (p.thumb || !p.thumbUrl) return
+  try {
+    const res = await fetch(p.thumbUrl, { credentials: 'omit' }) // 同音軌，不帶 IG 登入狀態
+    if (!res.ok) return
+    const img = await createImageBitmap(await res.blob(), { resizeWidth: 160, resizeQuality: 'medium' })
+    const canvas = new OffscreenCanvas(img.width, img.height)
+    canvas.getContext('2d')!.drawImage(img, 0, 0)
+    const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.7 })
+    p.thumb = await new Promise<string>((ok, fail) => {
+      const r = new FileReader()
+      r.onload = () => ok(String(r.result))
+      r.onerror = fail
+      r.readAsDataURL(jpeg)
+    })
+  } catch {
+    // 顯示色塊
+  }
+}
+
 /** 處理一位主播所有還沒完成的貼文：下載音軌 → 轉錄 → 萃取，最後整合成知識庫。
  *  金鑰錯誤、額度用完、重試後仍限流會停下整批（拋出 LlmError），停下前先用已完成的貼文整合知識庫；
  *  單則失敗只記在那一則，繼續下一則。 */
@@ -67,6 +89,7 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
     const step = (msg: string) => t('pipe.step', { label, msg })
     let downloaded = false
     try {
+      await saveThumb(p) // 跟著下面的 savePost 一起存
       if (p.transcript === undefined) {
         if (p.audioUrl || p.videoUrl) {
           report(i, step(t('pipe.download')))

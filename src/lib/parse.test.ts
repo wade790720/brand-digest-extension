@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { audioUrlOf, extractPosts, profileOf } from './parse'
+import { audioUrlOf, extractPosts, profileOf, thumbUrlOf } from './parse'
 
 // 結構照 2026-10 實際觀察到的主播主頁 graphql 回應（網址為假）
 const manifest =
@@ -63,4 +63,11 @@ it('互動數字：播放數取第一個有的欄位；沒有數字就不帶 sta
   const [v, i] = extractPosts(res, 'coach')!.posts
   expect(v.stats).toEqual({ likes: 120, comments: 8, plays: 5000 })
   expect('stats' in i).toBe(false)
+})
+
+it('縮圖網址：挑寬度至少 150 裡最小的；輪播用第一張；沒有就不帶', () => {
+  const c = [{ url: 'big', width: 1080 }, { url: 'tiny', width: 100 }, { url: 'small', width: 320 }]
+  expect(thumbUrlOf({ image_versions2: { candidates: c } })).toBe('small')
+  expect(thumbUrlOf({ carousel_media: [{ image_versions2: { candidates: [{ url: 'x', width: 90 }] } }] })).toBe('x')
+  expect(thumbUrlOf({})).toBeUndefined()
 })

@@ -15,7 +15,7 @@ function Thumb({ post, lit, className }: { post: Post; lit: boolean; className?:
   const [broken, setBroken] = useState(false)
   const base = cn('rounded-sm object-cover motion-safe:transition-[opacity,filter,background-color] motion-safe:duration-500', className)
   if (post.thumb && !broken)
-    return <img src={post.thumb} alt="" loading="lazy" onError={() => setBroken(true)} className={cn(base, !lit && 'opacity-30 grayscale')} />
+    return <img src={post.thumb} alt="" onError={() => setBroken(true)} className={cn(base, !lit && 'opacity-30 grayscale')} />
   return <div className={cn(base, 'bg-muted')} style={lit ? { background: `color-mix(in oklab, var(--primary) ${shade(post.code)}%, var(--muted))` } : undefined} />
 }
 
