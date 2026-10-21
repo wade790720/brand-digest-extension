@@ -6,10 +6,10 @@
 import { getLang, hookTypeLabel, t, type Key, type Lang } from '@/lib/i18n'
 import { LlmError, generate, inputBudget, parseJson } from '@/lib/llm'
 import { cachedCaller, sourceIndex, stripFence, type Progress } from '@/lib/pipeline'
+import { HOOK_TYPES } from '@/lib/prompts'
 import { getPosts, getSettings, savePlaybook, savePost } from '@/lib/store'
 import type { Creator, Post, ScriptBreakdown } from '@/types'
 
-export const HOOK_TYPES = ['提問', '反常識', '數字清單', '痛點', '故事開場', '身分喊話', '結果先行', '爭議觀點', '其他']
 const CTA_TYPES = ['留言關鍵字', '追蹤', '私訊', '點連結', '分享收藏', '購買', '無']
 
 const breakdownSystem = (lang: Lang) => `你是短影音腳本與文案分析師。只分析「怎麼說」：結構、話術、說服手法，不整理知識內容。

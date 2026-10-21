@@ -15,6 +15,7 @@ export interface Post {
   processedAt?: number // 萃取完成的時間（毫秒），萃取中翻出精華卡用
   stats?: PostStats // 收集時 IG 顯示的互動數字；重新滑到這則會更新
   script?: ScriptBreakdown // 腳本拆解：怎麼說（hook、結構、CTA），不是說什麼
+  thumb?: string // 縮圖，拆解畫面用；沒有或載入失敗就顯示色塊
 }
 
 /** 收集當下 IG 給的互動數字。IG 沒給的欄位就沒有（例如圖片貼文沒有播放數）。 */
@@ -49,6 +50,7 @@ export interface Digest {
   quotes: string[]
   terms: string[] // 工具、書、人名、專有名詞
   value: '高' | '中' | '低' // 含金量
+  hookType?: string // 開場類型，分類同腳本拆解（HOOK_TYPES）；舊資料沒有
 }
 
 export interface Creator {

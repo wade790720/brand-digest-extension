@@ -26,7 +26,7 @@ type Task = (c: Creator, signal: AbortSignal, onProgress: (p: Progress) => void)
 export interface Run {
   creator: string
   progress: Progress
-  startedAt: number // 這次萃取開始的時間：之後才完成的貼文會翻成精華卡
+  startedAt: number // 這次開始的時間：拆解畫面用它估剩餘時間
 }
 
 export default function App() {

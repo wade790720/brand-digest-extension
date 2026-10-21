@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ALL, TheoryDialog } from '@/components/TheoryDialog'
+import { DecodePanel } from '@/components/DecodePanel'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
@@ -15,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { deleteTheory, getChecks, getKnowledgeBase, getPlaybook, getPosts, getSettings, getTheories, onStoreChange, saveChecks, saveSettings } from '@/lib/store'
 import { linkCites } from '@/lib/cites'
-import { getLang, t, valueLabel, type Key } from '@/lib/i18n'
+import { getLang, t, type Key } from '@/lib/i18n'
 import { taskKey, taskKeys } from '@/lib/tasks'
 import { download } from '@/lib/utils'
 import { CLASSROOM_URL, CLUB_URL } from '@/lib/links'
@@ -27,7 +28,6 @@ const STATUS: Record<Post['status'], { label: Key; variant: 'secondary' | 'defau
   error: { label: 'status.error', variant: 'destructive' },
 }
 
-const VALUE: Record<'高' | '中' | '低', 'default' | 'secondary' | 'outline'> = { 高: 'default', 中: 'secondary', 低: 'outline' }
 
 const TRIAL = 10
 
@@ -155,10 +155,9 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
     saveChecks(creator.name, [...next])
   }
 
-  // 這次萃取新完成的貼文，翻成精華卡（新的在前）
-  const fresh = mine ? posts.filter((p) => p.digest && (p.processedAt ?? 0) >= run!.startedAt)
-    .sort((a, b) => b.processedAt! - a.processedAt!) : []
-  const tally = (v: string) => fresh.filter((p) => p.digest!.value === v).length
+  // 萃取中：這次要處理的貼文，給拆解畫面（理論對位、腳本拆解沒有 codes，照舊只顯示進度）
+  const byCode = new Map(posts.map((p) => [p.code, p]))
+  const runPosts = mine && run!.progress.codes ? run!.progress.codes.flatMap((c) => byCode.get(c) ?? []) : null
 
   // 理論對位：一個主題一篇，全部收在同一個分頁裡用選單切換，分頁列不會因為主題變多而變長
   const sortedTheories = [...theories].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
@@ -225,7 +224,8 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
             </div>
           </div>
           {busyElsewhere && <p className="text-sm text-muted-foreground">{t('cv.busyElsewhere', { name: run!.creator })}</p>}
-          {mine && (
+          {runPosts && <p className="text-xs text-muted-foreground">{t('cv.keepTab')}</p>}
+          {mine && !runPosts && (
             <div className="space-y-2" aria-live="polite">
               <Progress value={run!.progress.total ? (run!.progress.done / run!.progress.total) * 100 : 0} />
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -240,24 +240,9 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
         </CardContent>
       </Card>
 
-      {fresh.length > 0 && (
-        <section className="space-y-3" aria-label={t('cv.freshLabel')}>
-          <p className="text-sm text-muted-foreground">
-            {t('cv.freshStats', { n: fresh.length, high: tally('高'), mid: tally('中'), low: tally('低') })}
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {fresh.slice(0, 6).map((p) => (
-              <div key={p.code} className={`essence-card space-y-2 rounded-xl border bg-card p-4 ${p.digest!.value === '高' ? 'border-primary/60' : ''}`}>
-                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span>{date(p.takenAt)}</span>
-                  <Badge variant={VALUE[p.digest!.value]}>{t('cv.value', { v: valueLabel(p.digest!.value) })}</Badge>
-                </div>
-                <p className="line-clamp-2 font-medium">{p.digest!.topic}</p>
-                {p.digest!.points[0] && <p className="line-clamp-3 text-sm text-muted-foreground">{p.digest!.points[0]}</p>}
-              </div>
-            ))}
-          </div>
-        </section>
+      {runPosts && (
+        <DecodePanel handle={creator.name} posts={runPosts} current={run!.progress.current}
+          startedAt={run!.startedAt} status={run!.progress.status} />
       )}
 
       {stopReason && !mine && (

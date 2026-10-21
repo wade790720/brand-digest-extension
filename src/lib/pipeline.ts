@@ -1,6 +1,6 @@
 import { LlmError, generate, inputBudget, parseJson, transcribe } from '@/lib/llm'
 import { getLang, t, type Lang } from '@/lib/i18n'
-import { aggregateSystem, aggregateUser, digestSystem, digestUser, mergeUser } from '@/lib/prompts'
+import { HOOK_TYPES, aggregateSystem, aggregateUser, digestSystem, digestUser, mergeUser } from '@/lib/prompts'
 import { getCache, getPosts, getSettings, saveCache, saveKnowledgeBase, savePost } from '@/lib/store'
 import type { Creator, Digest, Post, Settings } from '@/types'
 
@@ -8,6 +8,8 @@ export interface Progress {
   done: number
   total: number
   status: string // 目前在做什麼，一行
+  codes?: string[] // 萃取時：這次要處理的貼文，拆解畫面用
+  current?: string // 萃取時：正在處理的那則；沒有＝都處理過了
 }
 
 // 每則音軌下載之間的停頓（秒）：從 IG 的影片伺服器下載，和播放影片同一種請求，仍保持人的節奏
@@ -23,7 +25,7 @@ function sleep(ms: number, signal: AbortSignal) {
   })
 }
 
-function toDigest(raw: any): Digest {
+export function toDigest(raw: any): Digest {
   const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : [])
   return {
     topic: String(raw?.topic ?? t('pipe.noTopic')),
@@ -32,6 +34,8 @@ function toDigest(raw: any): Digest {
     terms: list(raw?.terms),
     // 資料裡固定存中文 高／中／低；英文模式下 AI 偶爾會翻成 High／Medium／Low，換回來
     value: VALUE_ALIAS[String(raw?.value ?? '').trim().toLowerCase()] ?? '中',
+    // 不在清單裡（例如被翻譯）算「其他」；沒給就不帶，畫面上不計數
+    ...(raw?.hookType && { hookType: HOOK_TYPES.includes(String(raw.hookType).trim()) ? String(raw.hookType).trim() : '其他' }),
   }
 }
 
@@ -53,7 +57,8 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
   const lang = getLang() // 這次產出的語言：開始時的介面語言
   const posts = await getPosts(creator)
   const todo = posts.filter((p) => p.status !== 'done').slice(0, limit) // limit：第一次先試幾則，快點看到成果
-  const report = (done: number, status: string) => onProgress({ done, total: todo.length, status })
+  const codes = todo.map((p) => p.code)
+  const report = (done: number, status: string) => onProgress({ done, total: todo.length, status, codes, current: codes[done] })
   let fatal: LlmError | undefined
 
   for (const [i, p] of todo.entries()) {
@@ -98,13 +103,14 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
   }
 
   if (signal.aborted) return
+  const kbProgress = (p: Progress) => onProgress({ ...p, codes }) // 整合知識庫時拆解畫面留著
   if (fatal) {
     // 停在半路也先整合已完成的部分。整合用同一個 AI，額度用完時這步多半也失敗，失敗就只回報原本的原因
-    await buildKnowledgeBase(creator, settings, onProgress).catch(() => {})
+    await buildKnowledgeBase(creator, settings, kbProgress).catch(() => {})
     throw fatal
   }
-  await buildKnowledgeBase(creator, settings, onProgress)
-  onProgress({ done: 1, total: 1, status: t('common.done') })
+  await buildKnowledgeBase(creator, settings, kbProgress)
+  onProgress({ done: 1, total: 1, status: t('common.done'), codes })
 }
 
 /** 跨篇整合成知識庫。內容超過模型一次能收的量，就分批整理再合併（Groq 免費方案需要）。
