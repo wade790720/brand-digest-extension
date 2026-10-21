@@ -1,7 +1,7 @@
 import type { Post } from '@/types'
 
-/** 開場類型：萃取時判斷的優先，舊資料用腳本拆解的 */
-export const hookOf = (p: Post) => p.digest?.hookType ?? p.script?.hookType
+/** 開場類型：腳本拆解專門分析 hook，有就用它；沒有就用萃取時順便判斷的 */
+export const hookOf = (p: Post) => p.script?.hookType ?? p.digest?.hookType
 
 /** 拆解畫面的數字。posts 是這次要處理的貼文（依處理順序），current 是正在處理的那則；沒有＝都處理過了。
  *  只看資料算，不讀時鐘：預估剩餘時間用「最後一則完成的時間」推算，所以重播也能用同一套 */

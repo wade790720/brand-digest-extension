@@ -7,6 +7,7 @@ import { getLang, hookTypeLabel, t, type Key, type Lang } from '@/lib/i18n'
 import { LlmError, generate, inputBudget, parseJson } from '@/lib/llm'
 import { cachedCaller, sourceIndex, stripFence, type Progress } from '@/lib/pipeline'
 import { HOOK_TYPES } from '@/lib/prompts'
+import { hookOf } from '@/lib/decode'
 import { getPosts, getSettings, savePlaybook, savePost } from '@/lib/store'
 import type { Creator, Post, ScriptBreakdown } from '@/types'
 
@@ -86,7 +87,10 @@ export function toBreakdown(raw: any): ScriptBreakdown | null {
 /** 依 hook 類型統計：則數、平均播放、平均按讚。只算有數字的貼文，依平均播放（沒有就按讚）由高到低 */
 export function hookStats(posts: Post[]) {
   const groups = new Map<string, Post[]>()
-  for (const p of posts) if (p.script) groups.set(p.script.hookType, [...(groups.get(p.script.hookType) ?? []), p])
+  for (const p of posts) {
+    const h = hookOf(p)
+    if (h) groups.set(h, [...(groups.get(h) ?? []), p])
+  }
   const avg = (ps: Post[], k: 'plays' | 'likes') => {
     const vs = ps.map((p) => p.stats?.[k]).filter((v): v is number => v !== undefined)
     return vs.length ? Math.round(vs.reduce((a, b) => a + b, 0) / vs.length) : undefined

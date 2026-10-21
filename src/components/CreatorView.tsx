@@ -1,4 +1,4 @@
-import { Download, ExternalLink, X, FileText, Loader2, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
+import { Download, ExternalLink, FileText, Loader2, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ALL, TheoryDialog } from '@/components/TheoryDialog'
 import { DecodePanel } from '@/components/DecodePanel'
+import { KbDashboard } from '@/components/KbDashboard'
 import { Card, CardContent } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
@@ -19,7 +20,6 @@ import { linkCites } from '@/lib/cites'
 import { getLang, t, type Key } from '@/lib/i18n'
 import { taskKey, taskKeys } from '@/lib/tasks'
 import { download } from '@/lib/utils'
-import { CLASSROOM_URL, CLUB_URL } from '@/lib/links'
 import type { Creator, KnowledgeBase, Playbook, Post, Theory, TheoryDoc } from '@/types'
 
 const STATUS: Record<Post['status'], { label: Key; variant: 'secondary' | 'default' | 'destructive' }> = {
@@ -309,19 +309,9 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
                   <Download /> {t('common.download')}
                 </Button>
               </div>
-              {!clubDismissed && (
-                <div className="flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm text-muted-foreground">
-                  <span className="min-w-0 flex-1">{t('club.pitch')}</span>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={CLUB_URL} target="_blank" rel="noreferrer">{t('club.visit')} <ExternalLink /></a>
-                  </Button>
-                  <Button variant="ghost" size="icon-xs" aria-label={t('club.dismiss')} onClick={dismissClub}><X /></Button>
-                </div>
-              )}
+              <KbDashboard kb={kb} posts={posts} actions={{ done: actionsDone, total: actions.length }}
+                clubDismissed={clubDismissed} onDismissClub={dismissClub} />
               <Markdown text={kb.markdown} tasks={{ checked, toggle }} />
-              <p className="text-sm text-muted-foreground">
-                <a href={CLASSROOM_URL} target="_blank" rel="noreferrer" className="underline">{t('cv.nextStep')}</a>
-              </p>
             </>
           ) : (
             <Empty>

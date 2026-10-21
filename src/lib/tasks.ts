@@ -10,3 +10,12 @@ export function taskKey(line: string | undefined): string | null {
 
 /** 整份 Markdown 裡所有勾選項目的識別，依出現順序，不重複 */
 export const taskKeys = (md: string) => [...new Set(md.split('\n').map(taskKey).filter((k): k is string => !!k))]
+
+/** 知識庫第一個章節（這個創作者在教什麼）的第一段，去掉出處 [n] 和粗體，給儀表板當一句話摘要 */
+export function teachLine(md: string): string {
+  const lines = md.split('\n')
+  const start = lines.findIndex((l) => l.startsWith('## '))
+  if (start < 0) return ''
+  const first = lines.slice(start + 1).find((l) => l.trim() && !l.startsWith('#'))
+  return (first ?? '').replace(/^\s*[-*+]\s+/, '').replace(/\[\d+\]/g, '').replace(/\*\*/g, '').trim()
+}
