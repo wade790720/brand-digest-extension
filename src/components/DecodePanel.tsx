@@ -20,8 +20,9 @@ function Thumb({ post, lit, className }: { post: Post; lit: boolean; className?:
 }
 
 /** 萃取時的拆解畫面。資料怎麼來的不管：萃取中是真的進度，重播是用存好的結果一則一則放 */
-export function DecodePanel({ handle, posts, current, startedAt, status, children }: {
+export function DecodePanel({ handle, posts, current, startedAt, status, live = true, children }: {
   handle: string
+  live?: boolean // 重播時關掉：一秒好幾則，每則都念會吵
   posts: Post[] // 這次要處理的貼文，依處理順序
   current?: string // 正在處理的那則
   startedAt: number
@@ -105,12 +106,14 @@ export function DecodePanel({ handle, posts, current, startedAt, status, childre
       </div>
 
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 motion-safe:animate-spin" /> {status}
+        {(live || s.processed < posts.length) && <Loader2 className="size-4 motion-safe:animate-spin" />} {status}
       </p>
       {/* 只在每完成一則時念一次：文字只跟著「最新完成的那則」變 */}
-      <p className="sr-only" aria-live="polite">
-        {s.latest && d ? t('decode.announce', { n: s.decoded, total: posts.length, topic: d.topic }) : ''}
-      </p>
+      {live && (
+        <p className="sr-only" aria-live="polite">
+          {s.latest && d ? t('decode.announce', { n: s.decoded, total: posts.length, topic: d.topic }) : ''}
+        </p>
+      )}
     </section>
   )
 }

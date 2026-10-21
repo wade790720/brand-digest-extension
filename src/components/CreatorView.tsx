@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileText, Loader2, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react'
+import { Download, ExternalLink, FileText, History, Loader2, MoreHorizontal, Play, Plus, RefreshCw, RotateCcw, Square, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -10,6 +10,7 @@ import { ALL, TheoryDialog } from '@/components/TheoryDialog'
 import { DecodePanel } from '@/components/DecodePanel'
 import { KbDashboard } from '@/components/KbDashboard'
 import { Card, CardContent } from '@/components/ui/card'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -159,6 +160,20 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   const byCode = new Map(posts.map((p) => [p.code, p]))
   const runPosts = mine && run!.progress.codes ? run!.progress.codes.flatMap((c) => byCode.get(c) ?? []) : null
 
+  // 重播：用存好的萃取結果，依處理順序一則一則放進拆解畫面，不呼叫 AI。萃取一開始就讓位給真的進度
+  const [replay, setReplay] = useState<{ step: number; speed: 1 | 2 } | null>(null)
+  const saved = replay ? posts.filter((p) => p.status === 'done' && p.digest) : []
+  const tick = Math.min(800, Math.max(120, 15_000 / (saved.length || 1))) // ponytail: 1× 約 15 秒播完，每則 0.12–0.8 秒
+  useEffect(() => {
+    if (!replay || replay.step >= saved.length) return
+    const id = setTimeout(() => setReplay((r) => r && { ...r, step: r.step + 1 }), tick / replay.speed)
+    return () => clearTimeout(id)
+  }, [replay, saved.length, tick])
+  // 還沒放到的當作未處理；放過的補上假的完成時間，拆解畫面就能照常算剩餘時間
+  const replayPosts = replay && !mine
+    ? saved.map((p, i) => (i < replay.step ? { ...p, processedAt: ((i + 1) * tick) / replay.speed } : { ...p, status: 'new' as const }))
+    : null
+
   // 理論對位：一個主題一篇，全部收在同一個分頁裡用選單切換，分頁列不會因為主題變多而變長
   const sortedTheories = [...theories].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
   const theory = sortedTheories.find((d) => d.topic === theoryTopic) ?? sortedTheories[0]
@@ -189,10 +204,22 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
             </a>
           </p>
         </div>
-        {/* 處理中不能刪：會刪到正在寫入的資料 */}
-        <Button variant="ghost" size="sm" className="shrink-0 text-destructive hover:text-destructive" onClick={onDelete} disabled={mine}>
-          <Trash2 /> {t('common.delete')}
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label={t('app.moreFor', { name: creator.name })}><MoreHorizontal /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled={!!run || done === 0} onSelect={() => setReplay({ step: 0, speed: 1 })}>
+                <History /> {t('replay.menu')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* 處理中不能刪：會刪到正在寫入的資料 */}
+          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={onDelete} disabled={mine}>
+            <Trash2 /> {t('common.delete')}
+          </Button>
+        </div>
       </header>
 
       <Card>
@@ -243,6 +270,24 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
       {runPosts && (
         <DecodePanel handle={creator.name} posts={runPosts} current={run!.progress.current}
           startedAt={run!.startedAt} status={run!.progress.status} />
+      )}
+      {replay && replayPosts && (
+        <DecodePanel handle={creator.name} posts={replayPosts} current={saved[replay.step]?.code} startedAt={0} live={false}
+          status={replay.step < saved.length ? t('replay.status', { i: replay.step + 1, n: saved.length }) : t('replay.done')}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{t('replay.label')}</Badge>
+            <div role="group" aria-label={t('replay.speed')} className="flex rounded-md border p-0.5">
+              {([1, 2] as const).map((s) => (
+                <Button key={s} size="xs" variant={replay.speed === s ? 'secondary' : 'ghost'} aria-pressed={replay.speed === s}
+                  onClick={() => setReplay({ ...replay, speed: s })}>{s}×</Button>
+              ))}
+            </div>
+            {replay.step >= saved.length && (
+              <Button size="sm" variant="ghost" onClick={() => setReplay({ ...replay, step: 0 })}><RotateCcw /> {t('replay.again')}</Button>
+            )}
+            <Button size="icon-xs" variant="ghost" aria-label={t('replay.close')} onClick={() => setReplay(null)}><X /></Button>
+          </div>
+        </DecodePanel>
       )}
 
       {stopReason && !mine && (
