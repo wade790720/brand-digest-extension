@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { Post } from '@/types'
-import { decodeState } from './decode'
+import { decodeState, windowStart } from './decode'
 import { toDigest } from './pipeline'
 
 const post = (code: string, extra: Partial<Post> = {}) => ({ code, status: 'new', ...extra }) as Post
@@ -24,4 +24,12 @@ it('萃取結果的開場類型：被翻譯算其他，沒給就不帶', () => {
   expect(toDigest({ hookType: '痛點' }).hookType).toBe('痛點')
   expect(toDigest({ hookType: 'Question' }).hookType).toBe('其他')
   expect('hookType' in toDigest({})).toBe(false)
+})
+
+it('縮圖牆只顯示一段：一次捲一列，正在處理的在第二列，最後停在結尾', () => {
+  expect(windowStart(0, 100)).toBe(0)
+  expect(windowStart(15, 100)).toBe(0)
+  expect(windowStart(16, 100)).toBe(8)
+  expect(windowStart(99, 100)).toBe(76)
+  expect(windowStart(5, 10)).toBe(0) // 不到一整面
 })

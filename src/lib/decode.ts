@@ -25,3 +25,11 @@ export function decodeState(posts: Post[], current: string | undefined, startedA
     latest: done.reduce<Post | undefined>((a, p) => (!a || (p.processedAt ?? 0) >= (a.processedAt ?? 0) ? p : a), undefined),
   }
 }
+
+export const WALL = 24 // 縮圖牆最多顯示幾格（大螢幕 3 列 × 8 格）
+export const WALL_ROW = 8
+
+/** 縮圖牆顯示哪一段：每處理完一整列才往下捲一列，正在處理的那則保持在第二列，最後停在最後一段 */
+export function windowStart(processed: number, total: number) {
+  return Math.max(0, Math.min(Math.floor(processed / WALL_ROW) * WALL_ROW - WALL_ROW, total - WALL))
+}

@@ -19,3 +19,17 @@ export function teachLine(md: string): string {
   const first = lines.slice(start + 1).find((l) => l.trim() && !l.startsWith('#'))
   return (first ?? '').replace(/^\s*[-*+]\s+/, '').replace(/\[\d+\]/g, '').replace(/\*\*/g, '').trim()
 }
+
+/** 知識庫畫面用：拿掉第一個章節的第一段（儀表板已經顯示了）。章節因此變空就連標題一起拿掉。下載的 Markdown 不經過這裡 */
+export function dropTeachLine(md: string): string {
+  const lines = md.split('\n')
+  const start = lines.findIndex((l) => l.startsWith('## '))
+  const from = lines.findIndex((l, i) => i > start && l.trim() !== '')
+  if (start < 0 || from < 0 || lines[from].startsWith('#')) return md
+  let to = from
+  while (to < lines.length && lines[to].trim() !== '' && !lines[to].startsWith('#')) to++
+  const next = lines.findIndex((l, i) => i >= to && l.trim() !== '')
+  if (next < 0 || lines[next].startsWith('#')) // 這一節只有那一段：連標題一起拿掉
+    return [...lines.slice(0, start), ...lines.slice(next < 0 ? lines.length : next)].join('\n')
+  return [...lines.slice(0, from), ...lines.slice(to + 1)].join('\n')
+}

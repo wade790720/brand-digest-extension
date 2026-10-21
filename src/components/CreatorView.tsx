@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { deleteTheory, getChecks, getKnowledgeBase, getPlaybook, getPosts, getSettings, getTheories, onStoreChange, saveChecks, saveSettings } from '@/lib/store'
 import { linkCites } from '@/lib/cites'
 import { getLang, t, type Key } from '@/lib/i18n'
-import { taskKey, taskKeys } from '@/lib/tasks'
+import { dropTeachLine, taskKey, taskKeys } from '@/lib/tasks'
 import { download } from '@/lib/utils'
 import type { Creator, KnowledgeBase, Playbook, Post, Theory, TheoryDoc } from '@/types'
 
@@ -169,10 +169,14 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
     const id = setTimeout(() => setReplay((r) => r && { ...r, step: r.step + 1 }), tick / replay.speed)
     return () => clearTimeout(id)
   }, [replay, saved.length, tick])
+  if (mine && replay) setReplay(null) // 真的萃取開始就關掉重播，結束後不會再跳出「重播完畢」
   // 還沒放到的當作未處理；放過的補上假的完成時間，拆解畫面就能照常算剩餘時間
   const replayPosts = replay && !mine
     ? saved.map((p, i) => (i < replay.step ? { ...p, processedAt: ((i + 1) * tick) / replay.speed } : { ...p, status: 'new' as const }))
     : null
+  // 拆解畫面是主角：狀態卡只留一行狀態和停止，分頁先收起來
+  const stage = !!runPosts || !!replayPosts
+  const replaying = !!replay && replay.step < saved.length
 
   // 理論對位：一個主題一篇，全部收在同一個分頁裡用選單切換，分頁列不會因為主題變多而變長
   const sortedTheories = [...theories].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
@@ -222,6 +226,21 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
         </div>
       </header>
 
+      {stage ? (
+        <Card>
+          <CardContent className="flex items-center gap-3">
+            {(runPosts || replaying) && <Loader2 className="size-4 shrink-0 text-muted-foreground motion-safe:animate-spin" />}
+            <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+              {runPosts ? run!.progress.status : replaying ? t('replay.status', { i: replay!.step + 1, n: saved.length }) : t('replay.done')}
+            </p>
+            {runPosts ? (
+              <Button variant="outline" onClick={onStop}><Square /> {t('cv.stop')}</Button>
+            ) : (
+              <Button variant="outline" onClick={() => setReplay(null)}><X /> {t('replay.close')}</Button>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
       <Card>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -251,8 +270,7 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
             </div>
           </div>
           {busyElsewhere && <p className="text-sm text-muted-foreground">{t('cv.busyElsewhere', { name: run!.creator })}</p>}
-          {runPosts && <p className="text-xs text-muted-foreground">{t('cv.keepTab')}</p>}
-          {mine && !runPosts && (
+          {mine && (
             <div className="space-y-2" aria-live="polite">
               <Progress value={run!.progress.total ? (run!.progress.done / run!.progress.total) * 100 : 0} />
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -266,14 +284,14 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
           )}
         </CardContent>
       </Card>
+      )}
 
       {runPosts && (
         <DecodePanel handle={creator.name} posts={runPosts} current={run!.progress.current}
-          startedAt={run!.startedAt} status={run!.progress.status} />
+          startedAt={run!.startedAt} note={t('cv.keepTab')} />
       )}
       {replay && replayPosts && (
-        <DecodePanel handle={creator.name} posts={replayPosts} current={saved[replay.step]?.code} startedAt={0} live={false}
-          status={replay.step < saved.length ? t('replay.status', { i: replay.step + 1, n: saved.length }) : t('replay.done')}>
+        <DecodePanel handle={creator.name} posts={replayPosts} current={saved[replay.step]?.code} startedAt={0} live={false}>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{t('replay.label')}</Badge>
             <div role="group" aria-label={t('replay.speed')} className="flex rounded-md border p-0.5">
@@ -285,7 +303,6 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
             {replay.step >= saved.length && (
               <Button size="sm" variant="ghost" onClick={() => setReplay({ ...replay, step: 0 })}><RotateCcw /> {t('replay.again')}</Button>
             )}
-            <Button size="icon-xs" variant="ghost" aria-label={t('replay.close')} onClick={() => setReplay(null)}><X /></Button>
           </div>
         </DecodePanel>
       )}
@@ -307,6 +324,7 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
         </Alert>
       )}
 
+      {!stage && (
       <Tabs value={tab} onValueChange={setTab}>
         <div className="flex flex-wrap items-center gap-2">
           <TabsList className="h-auto flex-wrap">
@@ -356,7 +374,7 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
               </div>
               <KbDashboard kb={kb} posts={posts} actions={{ done: actionsDone, total: actions.length }}
                 clubDismissed={clubDismissed} onDismissClub={dismissClub} />
-              <Markdown text={kb.markdown} tasks={{ checked, toggle }} />
+              <Markdown text={dropTeachLine(kb.markdown)} tasks={{ checked, toggle }} />
             </>
           ) : (
             <Empty>
@@ -457,6 +475,7 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
           </Table>
         </TabsContent>
       </Tabs>
+      )}
 
       <TheoryDialog creator={creator} open={dialogTopic !== null} initialTopic={dialogTopic ?? ''}
         onOpenChange={(o) => !o && setDialogTopic(null)}
