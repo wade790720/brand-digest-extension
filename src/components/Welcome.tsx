@@ -39,7 +39,10 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
       setHasKb((await Promise.all(creators.map((c) => getKnowledgeBase(c.name)))).some(Boolean))
     }
     load()
-    return onStoreChange(load)
+    // 合併連續的變更（萃取時每則都會寫入好幾次），不然每次都把所有主播的知識庫讀一遍
+    let timer: ReturnType<typeof setTimeout>
+    const off = onStoreChange(() => (clearTimeout(timer), (timer = setTimeout(load, 300))))
+    return () => (clearTimeout(timer), off())
   }, [creators])
 
   async function saveKey() {

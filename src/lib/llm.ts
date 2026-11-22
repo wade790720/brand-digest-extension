@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { t } from '@/lib/i18n'
 import { MODEL_OPTIONS, getModelStatus, setModelStatus } from '@/lib/store'
 import type { Provider, Settings } from '@/types'
@@ -74,6 +73,8 @@ async function callOnce(s: Settings, system: string, user: string, json: boolean
     return (r.candidates?.[0]?.content?.parts ?? []).map((x: { text?: string }) => x.text ?? '').join('')
   }
   // Anthropic：官方 SDK。金鑰是使用者自己的、只存在本機，所以允許在瀏覽器直接呼叫。
+  // 用到才載入：打包後約 200 KB，其他供應商的使用者不用付這個啟動成本
+  const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 0 })
   try {
     const msg = await client.messages

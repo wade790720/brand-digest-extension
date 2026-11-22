@@ -1,6 +1,6 @@
 import { Download, ExternalLink, FileText, History, Loader2, MoreHorizontal, Play, Plus, RefreshCw, RotateCcw, Square, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+import { createContext, use, useCallback, useEffect, useRef, useState, type ComponentProps } from 'react'
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Run } from '@/App'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -64,39 +64,54 @@ function scrollToSource(article: HTMLElement, n: number) {
   li.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
+type Tasks = { checked: Set<string>; toggle: (key: string) => void }
+
+// 勾選狀態和原文行號用 Context 傳給下面三個元件。元件寫在外面、每次重畫都是同一個，
+// React 才會保留原本的元素：寫在 render 裡會整批重建，勾選後鍵盤焦點跳回頁面最上面
+const MdContext = createContext<{ tasks?: Tasks; lines: string[] }>({ lines: [] })
+
+// GFM 自帶的勾選框是停用的，換成自己的（見 MdLi）
+function MdInput({ node: _node, ...props }: ComponentProps<'input'> & ExtraProps) {
+  const { tasks } = use(MdContext)
+  return tasks && props.type === 'checkbox' ? null : <input {...props} />
+}
+
+function MdLi({ node, className, children, ...props }: ComponentProps<'li'> & ExtraProps) {
+  const { tasks, lines } = use(MdContext)
+  const key = tasks && className?.includes('task-list-item') ? taskKey(lines[(node?.position?.start.line ?? 0) - 1]) : null
+  if (!tasks || !key) return <li className={className} {...props}>{children}</li>
+  const on = tasks.checked.has(key)
+  return (
+    <li className="list-none" {...props}>
+      <label className="-ml-6 flex cursor-pointer items-start gap-2">
+        <input type="checkbox" className="mt-[0.45em] size-4 shrink-0 accent-primary" checked={on} onChange={() => tasks.toggle(key)} />
+        <span className={on ? 'text-muted-foreground line-through [&_a]:text-muted-foreground [&_strong]:text-muted-foreground' : ''}>{children}</span>
+      </label>
+    </li>
+  )
+}
+
+function MdLink({ href, node: _node, ...props }: ComponentProps<'a'> & ExtraProps) {
+  const cite = href?.match(/^#src-(\d+)$/)
+  if (!cite) return <a href={href} {...props} target="_blank" rel="noreferrer" />
+  return (
+    <a href={href} {...props} className="no-underline" title={t('cv.citeTitle', { n: cite[1] })}
+      onClick={(e) => (e.preventDefault(), scrollToSource(e.currentTarget.closest('article')!, Number(cite[1])))} />
+  )
+}
+
+const MD_COMPONENTS: Components = { input: MdInput, li: MdLi, a: MdLink }
+
 /** tasks：可行動清單可以勾選。checked 是勾掉的項目原文 */
-function Markdown({ text, tasks }: { text: string; tasks?: { checked: Set<string>; toggle: (key: string) => void } }) {
+function Markdown({ text, tasks }: { text: string; tasks?: Tasks }) {
   const lines = text.split('\n') // linkCites 不改行數，所以能用行號對回原文
   return (
     <article className="prose prose-neutral max-w-none dark:prose-invert">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr]}
-        components={{
-          // GFM 自帶的勾選框是停用的，換成自己的（見下面的 li）
-          input: ({ node: _node, ...props }) => (tasks && props.type === 'checkbox' ? null : <input {...props} />),
-          li: ({ node, className, children, ...props }) => {
-            const key = tasks && className?.includes('task-list-item') ? taskKey(lines[(node?.position?.start.line ?? 0) - 1]) : null
-            if (!tasks || !key) return <li className={className} {...props}>{children}</li>
-            const on = tasks.checked.has(key)
-            return (
-              <li className="list-none" {...props}>
-                <label className="-ml-6 flex cursor-pointer items-start gap-2">
-                  <input type="checkbox" className="mt-[0.45em] size-4 shrink-0 accent-primary" checked={on} onChange={() => tasks.toggle(key)} />
-                  <span className={on ? 'text-muted-foreground line-through [&_a]:text-muted-foreground [&_strong]:text-muted-foreground' : ''}>{children}</span>
-                </label>
-              </li>
-            )
-          },
-          a: ({ href, node: _node, ...props }) => {
-            const cite = href?.match(/^#src-(\d+)$/)
-            if (!cite) return <a href={href} {...props} target="_blank" rel="noreferrer" />
-            return (
-              <a href={href} {...props} className="no-underline" title={t('cv.citeTitle', { n: cite[1] })}
-                onClick={(e) => (e.preventDefault(), scrollToSource(e.currentTarget.closest('article')!, Number(cite[1])))} />
-            )
-          },
-        }}>
-        {linkCites(text)}
-      </ReactMarkdown>
+      <MdContext value={{ tasks, lines }}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr]} components={MD_COMPONENTS}>
+          {linkCites(text)}
+        </ReactMarkdown>
+      </MdContext>
     </article>
   )
 }
@@ -122,13 +137,19 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [clubDismissed, setClubDismissed] = useState(true) // 讀到設定前先不顯示，免得閃一下
 
+  // 一次讀完、一起更新：只重畫一次。兩次讀取重疊時，只用最後開始的那次，舊的結果晚到也不會蓋掉新的
+  const loadId = useRef(0)
   const load = useCallback(async () => {
-    setPosts(await getPosts(creator))
-    setKb(await getKnowledgeBase(creator.name))
-    setTheories(Object.values(await getTheories(creator.name)))
-    setPlaybook(await getPlaybook(creator.name))
-    setChecked(new Set(await getChecks(creator.name)))
-    setClubDismissed(!!(await getSettings()).clubDismissed)
+    const id = ++loadId.current
+    const [p, k, th, pb, ch, s] = await Promise.all([getPosts(creator), getKnowledgeBase(creator.name), getTheories(creator.name),
+      getPlaybook(creator.name), getChecks(creator.name), getSettings()])
+    if (id !== loadId.current) return
+    setPosts(p)
+    setKb(k)
+    setTheories(Object.values(th))
+    setPlaybook(pb)
+    setChecked(new Set(ch))
+    setClubDismissed(!!s.clubDismissed)
   }, [creator])
   useEffect(() => {
     load()
