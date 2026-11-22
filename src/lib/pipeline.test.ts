@@ -1,21 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { Creator, Post } from '@/types'
 
-// 用記憶體版的 localStorage 跑真的 store（store 沒有 chrome.storage 時改用 localStorage，並用 Object.keys 列出鍵）
-const ls: Record<string, string> = {}
-Object.defineProperties(ls, {
-  getItem: { value: (k: string) => ls[k] ?? null },
-  setItem: { value: (k: string, v: string) => void (ls[k] = v) },
-  removeItem: { value: (k: string) => void delete ls[k] },
-})
-const mem = {
-  get: (k: string) => ls[k],
-  set: (k: string, v: string) => void (ls[k] = v),
-  has: (k: string) => k in ls,
-  clear: () => Object.keys(ls).forEach((k) => delete ls[k]),
-}
-vi.stubGlobal('localStorage', ls)
-vi.stubGlobal('dispatchEvent', () => true)
+import { mem } from './test-storage' // 跑真的 store，資料存在記憶體
 
 const { processCreator } = await import('./pipeline')
 const { deleteCreator, getPosts, mergeCollected, saveSettings } = await import('./store')

@@ -17,6 +17,12 @@ const area = {
     for (const [k, v] of Object.entries(items)) localStorage.setItem(k, JSON.stringify(v))
     dispatchEvent(new Event(DEV_CHANGE))
   },
+  /** 只列鍵名，不讀內容（貼文帶逐字稿和縮圖，整份讀很慢） */
+  async keys(): Promise<string[]> {
+    if (!globalThis.chrome?.storage) return Object.keys(localStorage)
+    // getKeys 要 Chrome 130 以上；更舊的版本只能整份讀出來
+    return chrome.storage.local.getKeys ? chrome.storage.local.getKeys() : Object.keys(await chrome.storage.local.get(null))
+  },
   async remove(keys: string[]) {
     if (globalThis.chrome?.storage) return chrome.storage.local.remove(keys)
     keys.forEach((k) => localStorage.removeItem(k))
@@ -61,12 +67,10 @@ export async function getSettings(): Promise<Settings> {
 
 export const saveSettings = (s: Settings) => area.set({ settings: s })
 
+/** 側邊欄每次儲存有變動都會重讀：只讀主播索引，不碰貼文 */
 export async function getCreators(): Promise<Creator[]> {
-  const all = await area.get(null)
-  return Object.entries(all)
-    .filter(([k]) => k.startsWith('creator:'))
-    .map(([, v]) => v as Creator)
-    .sort((a, b) => b.codes.length - a.codes.length)
+  const keys = (await area.keys()).filter((k) => k.startsWith('creator:'))
+  return (Object.values(await area.get(keys)) as Creator[]).sort((a, b) => b.codes.length - a.codes.length)
 }
 
 export async function getPosts(creator: Creator): Promise<Post[]> {
@@ -177,7 +181,7 @@ export async function exportAll() {
   return { app: 'brand-digest', version: 1, exportedAt: new Date().toISOString(), data }
 }
 
-/** 匯入備份。同一則貼文：本機已完成、備份沒完成就留本機的；主播的貼文清單取聯集。回傳匯入幾位主播。 */
+/** 匯入備份。同一則貼文：本機已完成、備份沒完成就留本機的；知識庫和手冊留比較新的；主播的貼文清單取聯集。回傳匯入幾位主播。 */
 export async function importAll(backup: unknown): Promise<number> {
   const b = backup as { app?: string; data?: Record<string, unknown> }
   if (b?.app !== 'brand-digest' || typeof b.data !== 'object' || !b.data)
@@ -192,6 +196,8 @@ export async function importAll(backup: unknown): Promise<number> {
       const c = v as Creator
       data[k] = { ...c, codes: [...new Set([...c.codes, ...(old as Creator).codes])] }
     }
+    // 知識庫和手冊：留比較新的那份，匯入舊備份不會蓋掉本機剛整合好的
+    if ((k.startsWith('kb:') || k.startsWith('playbook:')) && (old.updatedAt ?? 0) > ((v as KnowledgeBase).updatedAt ?? 0)) data[k] = old
     if (k.startsWith('theory:')) data[k] = { ...old, ...(v as object) }
     if (k.startsWith('checks:')) data[k] = [...new Set([...(old as string[]), ...(v as string[])])]
   }

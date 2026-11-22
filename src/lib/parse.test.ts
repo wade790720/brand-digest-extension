@@ -3,14 +3,14 @@ import { audioUrlOf, extractPosts, profileOf, thumbUrlOf } from './parse'
 
 // 結構照 2026-10 實際觀察到的主播主頁 graphql 回應（網址為假）
 const manifest =
-  '<MPD><Period><AdaptationSet contentType="video"><Representation codecs="vp09"><BaseURL>https://cdn/v.mp4?a=1&amp;b=2</BaseURL></Representation></AdaptationSet>' +
-  '<AdaptationSet contentType="audio"><Representation codecs="mp4a"><BaseURL>https://cdn/a.mp4?x=1&amp;y=2</BaseURL></Representation></AdaptationSet></Period></MPD>'
+  '<MPD><Period><AdaptationSet contentType="video"><Representation codecs="vp09"><BaseURL>https://scontent.cdninstagram.com/v.mp4?a=1&amp;b=2</BaseURL></Representation></AdaptationSet>' +
+  '<AdaptationSet contentType="audio"><Representation codecs="mp4a"><BaseURL>https://scontent.cdninstagram.com/a.mp4?x=1&amp;y=2</BaseURL></Representation></AdaptationSet></Period></MPD>'
 const response = {
   data: {
     xdt_api__v1__feed__user_timeline_graphql_connection: {
       edges: [
         { node: { code: 'AAA', media_type: 2, taken_at: 100, caption: { text: '開場三秒' }, user: { username: 'Coach', full_name: '教練' },
-            video_versions: [{ url: 'https://cdn/full.mp4' }], video_dash_manifest: manifest } },
+            video_versions: [{ url: 'https://scontent.cdninstagram.com/full.mp4' }], video_dash_manifest: manifest } },
         { node: { code: 'BBB', media_type: 1, taken_at: 90, caption: null, user: { username: 'coach' } } },
         { node: { code: 'CCC', media_type: 2, user: { username: 'someone_else' } } },
       ],
@@ -29,7 +29,7 @@ describe('profileOf', () => {
 })
 
 describe('audioUrlOf', () => {
-  it('取音軌、還原 &amp;', () => expect(audioUrlOf(manifest)).toBe('https://cdn/a.mp4?x=1&y=2'))
+  it('取音軌、還原 &amp;', () => expect(audioUrlOf(manifest)).toBe('https://scontent.cdninstagram.com/a.mp4?x=1&y=2'))
   it('沒有 manifest', () => expect(audioUrlOf(undefined)).toBeUndefined())
 })
 
@@ -38,7 +38,7 @@ describe('extractPosts', () => {
     const msg = extractPosts(response, 'coach')!
     expect(msg.fullName).toBe('教練')
     expect(msg.posts.map((p) => p.code)).toEqual(['AAA', 'BBB'])
-    expect(msg.posts[0]).toMatchObject({ caption: '開場三秒', takenAt: 100, audioUrl: 'https://cdn/a.mp4?x=1&y=2' })
+    expect(msg.posts[0]).toMatchObject({ caption: '開場三秒', takenAt: 100, audioUrl: 'https://scontent.cdninstagram.com/a.mp4?x=1&y=2' })
     expect(msg.posts[1]).toMatchObject({ caption: '', audioUrl: undefined })
   })
   it('沒有這位主播的貼文就回 null', () => expect(extractPosts(response, 'nobody')).toBeNull())
@@ -70,4 +70,12 @@ it('縮圖網址：挑寬度至少 150 裡最小的；輪播用第一張；沒�
   expect(thumbUrlOf({ image_versions2: { candidates: c } })).toBe('small')
   expect(thumbUrlOf({ carousel_media: [{ image_versions2: { candidates: [{ url: 'x', width: 90 }] } }] })).toBe('x')
   expect(thumbUrlOf({})).toBeUndefined()
+})
+
+it('不是 IG 伺服器的網址不收：頁面上別的程式送來的不下載', () => {
+  const evil = { code: 'EVL', media_type: 2, user: { username: 'coach' }, video_versions: [{ url: 'https://evil.example/a.mp4' }],
+    image_versions2: { candidates: [{ url: 'https://evil.example.fbcdn.net.attacker.io/t.jpg', width: 320 }] } }
+  const p = extractPosts({ items: [evil] }, 'coach')!.posts[0]
+  expect(p.videoUrl).toBeUndefined()
+  expect('thumbUrl' in p).toBe(false)
 })
