@@ -8,7 +8,7 @@ import { LlmError, generate, inputBudget, parseJson } from '@/lib/llm'
 import { cachedCaller, sourceIndex, stripFence, type Progress } from '@/lib/pipeline'
 import { HOOK_TYPES } from '@/lib/prompts'
 import { hookOf } from '@/lib/decode'
-import { getPosts, getSettings, savePlaybook, savePost } from '@/lib/store'
+import { getPosts, getSettings, savePlaybook, updatePost } from '@/lib/store'
 import type { Creator, Post, ScriptBreakdown } from '@/types'
 
 const CTA_TYPES = ['留言關鍵字', '追蹤', '私訊', '點連結', '分享收藏', '購買', '無']
@@ -128,10 +128,10 @@ export async function buildPlaybook(creator: Creator, signal: AbortSignal, onPro
     onProgress({ done: i, total: todo.length + 1, status: `${label}…` })
     try {
       const raw = await generate(settings, breakdownSystem(lang), breakdownUser(p.caption, p.transcript ?? ''), {
-        json: true, onWait: (m) => onProgress({ done: i, total: todo.length + 1, status: `${label}：${m}` }),
+        json: true, onWait: (m) => onProgress({ done: i, total: todo.length + 1, status: `${label}：${m}` }), signal,
       })
       const b = toBreakdown(parseJson(raw))
-      if (b) await savePost({ ...p, script: b }) // 格式壞掉的這則先略過，下次再拆
+      if (b) await updatePost(p.code, { script: b }) // 格式壞掉的這則先略過，下次再拆
     } catch (e) {
       if (e instanceof LlmError && ['auth', 'quota', 'model', 'rate', 'overload'].includes(e.kind)) throw e
     }
@@ -163,7 +163,7 @@ export async function buildPlaybook(creator: Creator, signal: AbortSignal, onPro
   }
   const total = todo.length + batches.length + (batches.length > 1 ? 1 : 0)
   let step = todo.length
-  const cached = await cachedCaller(`script:${creator.name}`, settings)
+  const cached = await cachedCaller(`script:${creator.name}`, settings, signal)
   const ask = (status: string, user: string) => {
     onProgress({ done: step, total, status })
     return cached.call(playbookSystem(lang), user, { onWait: (m) => onProgress({ done: step, total, status: `${status}${m}` }) })

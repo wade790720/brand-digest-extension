@@ -41,13 +41,13 @@ function classify(status: number, body: string, provider: Provider, retryAfter?:
   return new LlmError(t('llm.other', { name, status, body: body.slice(0, 160) }), 'other')
 }
 
-async function post(provider: Provider, url: string, headers: Record<string, string>, body: unknown) {
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) })
+async function post(provider: Provider, url: string, headers: Record<string, string>, body: unknown, signal?: AbortSignal) {
+  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal })
   if (!res.ok) throw classify(res.status, await res.text(), provider, res.headers.get('retry-after'))
   return res.json()
 }
 
-async function callOnce(s: Settings, system: string, user: string, json: boolean): Promise<string> {
+async function callOnce(s: Settings, system: string, user: string, json: boolean, signal?: AbortSignal): Promise<string> {
   const p = s.provider
   const key = s.keys[p]
   if (!key) throw new LlmError(t('llm.noKey', { name: PROVIDER_NAMES[p] }), 'auth')
@@ -58,7 +58,7 @@ async function callOnce(s: Settings, system: string, user: string, json: boolean
     const base = p === 'groq' ? 'https://api.groq.com/openai/v1' : 'https://api.openai.com/v1'
     const ask = (strict: boolean) => post(p, `${base}/chat/completions`, { authorization: `Bearer ${key}` }, {
       model, messages, temperature: 0.3, ...(strict ? { response_format: { type: 'json_object' } } : {}),
-    })
+    }, signal)
     // JSON 模式被拒就改用一般模式重問：提示詞本來就要求只回 JSON，呼叫端用 parseJson 容錯解析
     const r = await ask(json).catch((e) => (json && e instanceof LlmError && e.kind === 'bad_json' ? ask(false) : Promise.reject(e)))
     return r.choices?.[0]?.message?.content ?? ''
@@ -70,14 +70,14 @@ async function callOnce(s: Settings, system: string, user: string, json: boolean
         systemInstruction: { parts: [{ text: system }] },
         contents: [{ role: 'user', parts: [{ text: user }] }],
         generationConfig: { temperature: 0.3, ...(json ? { responseMimeType: 'application/json' } : {}) },
-      })
+      }, signal)
     return (r.candidates?.[0]?.content?.parts ?? []).map((x: { text?: string }) => x.text ?? '').join('')
   }
   // Anthropic：官方 SDK。金鑰是使用者自己的、只存在本機，所以允許在瀏覽器直接呼叫。
   const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 0 })
   try {
     const msg = await client.messages
-      .stream({ model, max_tokens: 16000, system, messages: [{ role: 'user', content: user }] })
+      .stream({ model, max_tokens: 16000, system, messages: [{ role: 'user', content: user }] }, { signal })
       .finalMessage()
     return msg.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('')
   } catch (e) {
@@ -86,7 +86,12 @@ async function callOnce(s: Settings, system: string, user: string, json: boolean
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+/** 等 ms 毫秒。按了停止就立刻結束並拋出，等待中的重試和排隊不用等完 */
+const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((ok, fail) => {
+  if (signal?.aborted) return fail(signal.reason)
+  const id = setTimeout(ok, ms)
+  signal?.addEventListener('abort', () => (clearTimeout(id), fail(signal.reason)), { once: true })
+})
 const DAY = 24 * 60 * 60 * 1000
 
 /** 要依序試的模型：偏好的排第一，再來是同一家的其他模型（每個模型的額度分開算）。
@@ -124,7 +129,7 @@ async function withFallback<T>(prefix: string, models: string[], exhausted: stri
 /** 限流或伺服器忙會等一下自動重試（遵守 retry-after），其他錯誤直接拋出。 */
 /** 每分鐘上限（429）等一下一定會恢復，耐心等，最多約 10 分鐘；
  *  伺服器過載（5xx）重試 4 次還不行就停下，免得一直消耗每日額度。 */
-async function retryRate<T>(fn: () => Promise<T>, onWait?: (msg: string) => void): Promise<T> {
+async function retryRate<T>(fn: () => Promise<T>, onWait?: (msg: string) => void, signal?: AbortSignal): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn()
@@ -133,7 +138,7 @@ async function retryRate<T>(fn: () => Promise<T>, onWait?: (msg: string) => void
       if (attempt >= (e.kind === 'rate' ? 10 : 4)) throw e
       const sec = Math.min(e.retryAfterSec ?? (e.kind === 'rate' ? 20 : 5 * 2 ** attempt), 60)
       onWait?.(t('llm.waitAuto', { msg: e.message, s: Math.round(sec) }))
-      await sleep(sec * 1000)
+      await sleep(sec * 1000, signal)
     }
   }
 }
@@ -157,14 +162,14 @@ export function waitNeeded(log: { at: number; tokens: number }[], now: number, n
   return 0 // need 已經限制在 cap 以內，走不到這裡
 }
 
-async function pace(p: Provider, chars: number, onWait?: (msg: string) => void) {
+async function pace(p: Provider, chars: number, onWait?: (msg: string) => void, signal?: AbortSignal) {
   const cap = TPM[p]
   if (!cap) return
   const need = Math.min(Math.round(chars * 1.2) + 1000, cap)
   const log = (sentLog[p] ??= [])
   for (let ms = waitNeeded(log, Date.now(), need, cap); ms > 0; ms = waitNeeded(log, Date.now(), need, cap)) {
     onWait?.(t('llm.pace', { name: PROVIDER_NAMES[p], s: Math.ceil(ms / 1000) }))
-    await sleep(ms)
+    await sleep(ms, signal)
   }
   log.splice(0, log.length, ...log.filter((x) => Date.now() - x.at < 60_000), { at: Date.now(), tokens: need })
 }
@@ -173,22 +178,23 @@ async function pace(p: Provider, chars: number, onWait?: (msg: string) => void) 
 export const resetPacing = () => Object.keys(sentLog).forEach((k) => delete sentLog[k as Provider])
 
 /** 呼叫 AI。限流會等一下重試；這個模型額度用完，自動換同一家的下一個模型。 */
-export async function generate(s: Settings, system: string, user: string, opts: { json?: boolean; onWait?: (msg: string) => void } = {}) {
+export async function generate(s: Settings, system: string, user: string,
+  opts: { json?: boolean; onWait?: (msg: string) => void; signal?: AbortSignal } = {}) {
   const p = s.provider
   const models = await candidates(p, s.models[p], MODEL_OPTIONS[p])
   const exhausted = t('llm.allUsed', { name: PROVIDER_NAMES[p] })
   return withFallback(p, models, exhausted, opts.onWait, (model) =>
     retryRate(async () => {
-      await pace(p, system.length + user.length, opts.onWait)
-      return callOnce({ ...s, models: { ...s.models, [p]: model } }, system, user, !!opts.json)
-    }, opts.onWait))
+      await pace(p, system.length + user.length, opts.onWait, opts.signal)
+      return callOnce({ ...s, models: { ...s.models, [p]: model } }, system, user, !!opts.json, opts.signal)
+    }, opts.onWait, opts.signal))
 }
 
 // 兩個 Whisper 模型的額度分開算：turbo 用完就換 large-v3
 const WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3']
 
 /** 轉錄一律用 Groq Whisper：免費額度夠用、速度快。瀏覽器裡用不到本機 GPU。 */
-export async function transcribe(s: Settings, audio: Blob, onWait?: (msg: string) => void): Promise<string> {
+export async function transcribe(s: Settings, audio: Blob, onWait?: (msg: string) => void, signal?: AbortSignal): Promise<string> {
   const key = s.keys.groq
   if (!key) throw new LlmError(t('llm.groqNeeded'), 'auth')
   const once = async (model: string) => {
@@ -197,7 +203,7 @@ export async function transcribe(s: Settings, audio: Blob, onWait?: (msg: string
     form.append('model', model)
     form.append('response_format', 'text')
     const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST', headers: { authorization: `Bearer ${key}` }, body: form,
+      method: 'POST', headers: { authorization: `Bearer ${key}` }, body: form, signal,
     })
     if (res.ok) return (await res.text()).trim()
     const err = classify(res.status, await res.text(), 'groq', res.headers.get('retry-after'))
@@ -207,7 +213,7 @@ export async function transcribe(s: Settings, audio: Blob, onWait?: (msg: string
   }
   const models = await candidates('whisper', WHISPER[0], WHISPER)
   const exhausted = t('llm.whisperAll')
-  return withFallback('whisper', models, exhausted, onWait, (m) => retryRate(() => once(m), onWait))
+  return withFallback('whisper', models, exhausted, onWait, (m) => retryRate(() => once(m), onWait, signal))
 }
 
 /** 容錯解析 JSON：模型可能包 markdown 圍欄，或前後多講話。 */

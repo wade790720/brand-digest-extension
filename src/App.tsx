@@ -75,6 +75,7 @@ export default function App() {
       await task(creator, ctrl.signal, (progress) => setRun({ creator: creator.name, progress, startedAt }))
       if (!ctrl.signal.aborted) toast.success(doneMsg)
     } catch (e) {
+      if (ctrl.signal.aborted) return // 按了停止：中斷進行中的請求會拋錯，不算失敗
       const msg = e instanceof Error ? e.message : String(e)
       toast.error(msg, { duration: 10000 })
       setStopped({ creator: creator.name, reason: msg })

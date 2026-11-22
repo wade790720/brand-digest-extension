@@ -74,7 +74,14 @@ export async function getPosts(creator: Creator): Promise<Post[]> {
   return creator.codes.map((c) => got[`post:${c}`]).filter(Boolean)
 }
 
-export const savePost = (p: Post) => area.set({ [`post:${p.code}`]: p })
+export const getPost = async (code: string): Promise<Post | undefined> => (await area.get([`post:${code}`]))[`post:${code}`]
+
+/** 只改傳進來的欄位，其他欄位用儲存裡最新的。萃取用它存結果：收集可能在萃取途中更新了網址和互動數字。
+ *  shortcut: 讀和寫之間沒有鎖，背景程式剛好在這幾毫秒內也寫同一則時仍可能蓋掉；要完全避免得讓收集和萃取寫不同的鍵 */
+export async function updatePost(code: string, patch: Partial<Post>) {
+  const cur = await getPost(code)
+  if (cur) await area.set({ [`post:${code}`]: { ...cur, ...patch } })
+}
 
 export async function getKnowledgeBase(creator: string): Promise<KnowledgeBase | undefined> {
   return (await area.get([`kb:${creator}`]))[`kb:${creator}`]
@@ -151,10 +158,13 @@ export async function deleteTheory(creator: string, topic: string) {
 }
 
 export async function deleteCreator(creator: Creator) {
-  const caches = Object.keys(await area.get(null))
+  const all = await area.get(null)
+  const caches = Object.keys(all)
     .filter((k) => k === `cache:kb:${creator.name}` || k === `cache:script:${creator.name}` || k.startsWith(`cache:theory:${creator.name}:`))
+  // 合作貼文只存一份，另一位主播也列著的不能刪
+  const shared = new Set(Object.entries(all).flatMap(([k, v]) => (k.startsWith('creator:') && k !== `creator:${creator.name}` ? (v as Creator).codes : [])))
   await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, `theory:${creator.name}`, `checks:${creator.name}`, `playbook:${creator.name}`, ...caches,
-    ...creator.codes.map((c) => `post:${c}`)])
+    ...creator.codes.filter((c) => !shared.has(c)).map((c) => `post:${c}`)])
 }
 
 // —— 備份 ——

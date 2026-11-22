@@ -224,7 +224,7 @@ export async function buildTheory(creator: Creator, topic: string, skeleton: The
   let step = 0
   let total = batches.length + skeleton.length + 1 // 對位完才知道幾個理論有碎片，到時再修正
   const say = (status: string) => onProgress({ done: step, total, status })
-  const cached = await cachedCaller(`theory:${creator.name}:${topic}`, settings)
+  const cached = await cachedCaller(`theory:${creator.name}:${topic}`, settings, signal)
   const ask = (status: string, system: string, user: string, json = false) =>
     cached.call(system, user, { json, onStart: () => say(status), onWait: (m) => say(`${status}${m}`) })
 

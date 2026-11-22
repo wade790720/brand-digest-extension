@@ -1,7 +1,7 @@
-import { LlmError, generate, inputBudget, parseJson, transcribe } from '@/lib/llm'
+import { LlmError, PROVIDER_NAMES, generate, inputBudget, parseJson, transcribe } from '@/lib/llm'
 import { getLang, t, type Lang } from '@/lib/i18n'
 import { HOOK_TYPES, aggregateSystem, aggregateUser, digestSystem, digestUser, mergeUser } from '@/lib/prompts'
-import { getCache, getPosts, getSettings, saveCache, saveKnowledgeBase, savePost } from '@/lib/store'
+import { getCache, getPost, getPosts, getSettings, saveCache, saveKnowledgeBase, updatePost } from '@/lib/store'
 import type { Creator, Digest, Post, Settings } from '@/types'
 
 export interface Progress {
@@ -39,9 +39,9 @@ export function toDigest(raw: any): Digest {
   }
 }
 
-async function download(p: Post): Promise<Blob> {
+async function download(p: Post, signal: AbortSignal): Promise<Blob> {
   const url = p.audioUrl ?? p.videoUrl!
-  const res = await fetch(url, { credentials: 'omit' }) // 不帶 IG 登入狀態
+  const res = await fetch(url, { credentials: 'omit', signal }) // 不帶 IG 登入狀態
   if (res.status === 403 || res.status === 410)
     throw new Error(t('pipe.expired'))
   if (!res.ok) throw new Error(t('pipe.downloadFail', { status: res.status }))
@@ -50,10 +50,10 @@ async function download(p: Post): Promise<Blob> {
 
 /** 下載縮圖，縮成 160px 寬的 JPEG 存在貼文上。之後顯示都用這份，不再向 IG 要圖。
  *  失敗（網址過期、格式不支援）就算了：拆解畫面會顯示色塊，不影響萃取 */
-async function saveThumb(p: Post) {
+async function saveThumb(p: Post, signal: AbortSignal) {
   if (p.thumb || !p.thumbUrl) return
   try {
-    const res = await fetch(p.thumbUrl, { credentials: 'omit' }) // 同音軌，不帶 IG 登入狀態
+    const res = await fetch(p.thumbUrl, { credentials: 'omit', signal }) // 同音軌，不帶 IG 登入狀態
     if (!res.ok) return
     const img = await createImageBitmap(await res.blob(), { resizeWidth: 160, resizeQuality: 'medium' })
     const canvas = new OffscreenCanvas(img.width, img.height)
@@ -83,34 +83,39 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
   const report = (done: number, status: string) => onProgress({ done, total: todo.length, status, codes, current: codes[done] })
   let fatal: LlmError | undefined
 
-  for (const [i, p] of todo.entries()) {
+  for (const [i, code] of codes.entries()) {
     if (signal.aborted) break
+    const p = await getPost(code) // 每則開始前讀最新的：收集可能在萃取途中換了新網址
+    if (!p) continue
     const label = t('pipe.label', { i: i + 1, n: todo.length })
     const step = (msg: string) => t('pipe.step', { label, msg })
     let downloaded = false
     try {
-      await saveThumb(p) // 跟著下面的 savePost 一起存
+      await saveThumb(p, signal) // 跟著下面的 updatePost 一起存
       if (p.transcript === undefined) {
         if (p.audioUrl || p.videoUrl) {
           report(i, step(t('pipe.download')))
-          const audio = await download(p)
+          const audio = await download(p, signal)
           downloaded = true
           report(i, step(t('pipe.transcribe')))
-          p.transcript = await transcribe(settings, audio, (m) => report(i, step(m)))
+          p.transcript = await transcribe(settings, audio, (m) => report(i, step(m)), signal)
         } else {
           p.transcript = '' // 圖片貼文：只用文案
         }
-        await savePost(p) // 轉錄先存：萃取失敗時下次不用重新下載、轉錄
+        await updatePost(code, { transcript: p.transcript, thumb: p.thumb }) // 轉錄先存：萃取失敗時下次不用重新下載、轉錄
       }
       report(i, step(t('pipe.extract')))
-      const raw = await generate(settings, digestSystem(lang), digestUser(p.caption, p.transcript), {
-        json: true, onWait: (m) => report(i, step(m)),
-      })
-      p.digest = toDigest(parseJson(raw))
+      const json = parseJson(await generate(settings, digestSystem(lang), digestUser(p.caption, p.transcript), {
+        json: true, onWait: (m) => report(i, step(m)), signal,
+      }))
+      // 格式壞掉就算這則失敗，下次會重做；不要存成空白的「完成」
+      if (!json) throw new LlmError(t('llm.badJson', { name: PROVIDER_NAMES[settings.provider] }), 'bad_json')
+      p.digest = toDigest(json)
       p.status = 'done'
       p.processedAt = Date.now()
       p.error = undefined
     } catch (e) {
+      if (signal.aborted) break // 按了停止：這則不算失敗，下次從這則接著做
       // rate 到這裡代表重試完還是限流或過載：下一則多半一樣，停下來免得白白消耗每日額度
       if (e instanceof LlmError && ['auth', 'quota', 'model', 'rate', 'overload'].includes(e.kind)) {
         fatal = e
@@ -119,7 +124,8 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
       p.status = 'error'
       p.error = e instanceof Error ? e.message : String(e)
     }
-    await savePost(p)
+    // 只寫萃取負責的欄位：收集在萃取途中更新的網址、互動數字不會被蓋掉
+    await updatePost(code, { thumb: p.thumb, transcript: p.transcript, digest: p.digest, status: p.status, processedAt: p.processedAt, error: p.error })
     report(i + 1, step(p.status === 'done' ? t('common.done') : t('pipe.failed', { error: p.error ?? '' })))
     if (downloaded && i < todo.length - 1)
       await sleep((PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN)) * 1000, signal)
@@ -129,16 +135,16 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
   const kbProgress = (p: Progress) => onProgress({ ...p, codes }) // 整合知識庫時拆解畫面留著
   if (fatal) {
     // 停在半路也先整合已完成的部分。整合用同一個 AI，額度用完時這步多半也失敗，失敗就只回報原本的原因
-    await buildKnowledgeBase(creator, settings, kbProgress).catch(() => {})
+    await buildKnowledgeBase(creator, settings, kbProgress, signal).catch(() => {})
     throw fatal
   }
-  await buildKnowledgeBase(creator, settings, kbProgress)
+  await buildKnowledgeBase(creator, settings, kbProgress, signal)
   onProgress({ done: 1, total: 1, status: t('common.done'), codes })
 }
 
 /** 跨篇整合成知識庫。內容超過模型一次能收的量，就分批整理再合併（Groq 免費方案需要）。
  *  每次呼叫的結果先暫存：額度在半路用完時，下次只做還沒做的批次。 */
-export async function buildKnowledgeBase(creator: Creator, settings: Settings, onProgress: (p: Progress) => void) {
+export async function buildKnowledgeBase(creator: Creator, settings: Settings, onProgress: (p: Progress) => void, signal?: AbortSignal) {
   const { posts, use } = await keptPosts(creator)
   if (!use.length) return
 
@@ -158,7 +164,7 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
   let status = ''
   const say = (m: string) => onProgress({ done: step, total, status: m })
 
-  const cached = await cachedCaller(`kb:${creator.name}`, settings)
+  const cached = await cachedCaller(`kb:${creator.name}`, settings, signal)
   const lang = getLang()
   const call = (user: string) => cached.call(aggregateSystem(lang), user, {
     onStart: () => say(`${status}${t('kb.batchSlow')}`), onWait: (m) => say(`${status}${m}`),
@@ -232,14 +238,14 @@ export const sourceIndex = (use: Post[], lang: Lang = getLang()) =>
 const VALUE_ALIAS: Record<string, Digest['value']> = { 高: '高', 中: '中', 低: '低', high: '高', medium: '中', mid: '中', low: '低' }
 
 /** 呼叫 AI，回應先暫存在 scope 底下：額度在半路用完時，下次同樣的請求直接用暫存。整理完成後呼叫 clear。 */
-export async function cachedCaller(scope: string, settings: Settings) {
+export async function cachedCaller(scope: string, settings: Settings, signal?: AbortSignal) {
   const cache = await getCache(scope)
   return {
     async call(system: string, user: string, opts: { json?: boolean; onStart?: () => void; onWait?: (m: string) => void } = {}) {
       const key = hash(system + user)
       if (cache[key] !== undefined) return cache[key]
       opts.onStart?.()
-      const out = await generate(settings, system, user, opts)
+      const out = await generate(settings, system, user, { ...opts, signal })
       cache[key] = out
       await saveCache(scope, cache)
       return out
