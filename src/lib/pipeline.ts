@@ -98,7 +98,9 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
       const json = parseJson(await generate(settings, digestSystem(lang), digestUser(p.caption, p.transcript), {
         json: true, onWait: (m) => report(i, step(m)), signal,
       }))
-      if (!json) throw new LlmError(t('llm.badJson', { name: PROVIDER_NAMES[settings.provider] }), 'bad_json')
+      // 不是物件（例如包在陣列裡）也算格式壞掉：這則算失敗，下次重做，不存成空白的完成
+      if (!json || typeof json !== 'object' || Array.isArray(json))
+        throw new LlmError(t('llm.badJson', { name: PROVIDER_NAMES[settings.provider] }), 'bad_json')
       p.digest = toDigest(json)
       p.status = 'done'
       p.processedAt = Date.now()
@@ -110,6 +112,7 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
         break
       }
       p.status = 'error'
+      p.processedAt = Date.now() // 失敗的也記時間，拆解畫面才能估剩餘時間
       p.error = e instanceof Error ? e.message : String(e)
     }
     await updatePost(code, { thumb: p.thumb, transcript: p.transcript, digest: p.digest, status: p.status, processedAt: p.processedAt, error: p.error })

@@ -43,3 +43,10 @@ it('同時收到兩批收集：誰呼叫都依序合併，兩批的貼文都留�
   ])
   expect(mem.json('creator:coach').codes.sort()).toEqual(['P1', 'P2'])
 })
+
+it('備份裡的主播缺少貼文清單：說明不是正確的備份檔，什麼都不寫入', async () => {
+  mem.set('creator:coach', { name: 'coach', fullName: '', codes: ['A'] })
+  const err = await importAll({ app: 'brand-digest', data: { 'creator:coach': { name: 'coach' }, 'kb:coach': { markdown: 'x', updatedAt: 1, postCount: 1 } } }).catch((e) => e)
+  expect(err.message).toContain('備份檔')
+  expect(mem.has('kb:coach')).toBe(false)
+})

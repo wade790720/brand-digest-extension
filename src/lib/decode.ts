@@ -6,7 +6,7 @@ export function decodeState(posts: Post[], current: string | undefined, startedA
   const at = current ? posts.findIndex((p) => p.code === current) : -1
   const processed = at < 0 ? posts.length : at
   const done = posts.slice(0, processed).filter((p) => p.status === 'done' && p.digest)
-  const last = Math.max(startedAt, ...done.map((p) => p.processedAt ?? 0))
+  const last = Math.max(startedAt, ...posts.slice(0, processed).map((p) => p.processedAt ?? 0))
   const perPost = processed && last > startedAt ? (last - startedAt) / processed : 0
   const hooks = new Map<string, number>()
   for (const p of done) {

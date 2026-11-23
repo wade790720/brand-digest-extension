@@ -70,3 +70,11 @@ it('按停止：限流等待中的 AI 呼叫馬上結束，不用等重試', asy
   await expect(call).rejects.toThrow()
   expect(Date.now() - started).toBeLessThan(2000)
 })
+
+it('AI 回的是陣列或字串，不是物件：同樣算失敗，不存成空白的完成', async () => {
+  seed()
+  reply = '[{"topic":"t","points":["p"],"quotes":[],"terms":[],"value":"高"}]'
+  await run()
+  expect((await post()).status).toBe('error')
+  reply = '{"topic":"t","points":["p"],"quotes":[],"terms":[],"value":"高"}'
+})

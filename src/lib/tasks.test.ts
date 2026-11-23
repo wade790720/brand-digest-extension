@@ -22,3 +22,10 @@ it('知識庫畫面拿掉第一段；章節變空就連標題拿掉', () => {
   expect(dropTeachLine('_n_\n\n## 教什麼\n\n只有一段\n\n## 方法\n- A')).toBe('_n_\n\n## 方法\n- A')
   expect(dropTeachLine('沒有章節')).toBe('沒有章節')
 })
+
+it('第一節是清單時只拿掉儀表板顯示的那一點，其他點和標題留著', () => {
+  const md = '_n_\n\n## 教什麼\n\n- 第一點 [1]\n- 第二點\n- 第三點\n\n## 方法\n- A'
+  expect(teachLine(md)).toBe('第一點')
+  expect(dropTeachLine(md)).toBe('_n_\n\n## 教什麼\n\n- 第二點\n- 第三點\n\n## 方法\n- A')
+  expect(teachLine('## 教什麼\n\n1. 編號的第一點')).toBe('編號的第一點')
+})

@@ -178,6 +178,8 @@ export async function importAll(backup: unknown): Promise<number> {
   if (b?.app !== 'brand-digest' || typeof b.data !== 'object' || !b.data)
     throw new Error(t('store.notBackup', { app: t('app.name') }))
   const data = Object.fromEntries(Object.entries(b.data).filter(([k]) => BACKUP_KEY.test(k)))
+  if (Object.entries(data).some(([k, v]) => k.startsWith('creator:') && !Array.isArray((v as Creator | undefined)?.codes)))
+    throw new Error(t('store.notBackup', { app: t('app.name') }))
   const local = await area.get(Object.keys(data))
   for (const [k, v] of Object.entries(data)) {
     const old = local[k]

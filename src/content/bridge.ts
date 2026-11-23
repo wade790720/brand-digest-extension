@@ -99,6 +99,7 @@ function show(lang: Lang, title: string, body: string, buttons: { label: string;
 
 // 螢幕閱讀器播報：區塊先放進頁面、稍後才填文字才會被念出來；帶著文字一起插入的常常不念
 let live: HTMLElement | null = null
+let liveTimer: ReturnType<typeof setTimeout> | undefined
 function announce(text: string) {
   if (!live?.isConnected) {
     live = document.createElement('div')
@@ -108,7 +109,8 @@ function announce(text: string) {
   }
   const el = live
   el.textContent = ''
-  setTimeout(() => (el.textContent = text), 100)
+  clearTimeout(liveTimer) // 連續兩次提示時，不要在新的之後才念舊的
+  liveTimer = setTimeout(() => (el.textContent = text), 100)
 }
 
 function hide() {
