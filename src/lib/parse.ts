@@ -10,7 +10,6 @@ export function profileOf(pathname: string): string | null {
   return m && !reserved.includes(m[1]) ? m[1].toLowerCase() : null
 }
 
-/** DASH manifest 裡的音軌網址。只下載音軌：一則約 350 KB，轉錄只需要聲音。 */
 export function audioUrlOf(manifest?: string): string | undefined {
   if (!manifest) return undefined
   for (const set of manifest.split('<AdaptationSet').slice(1)) {
@@ -22,7 +21,7 @@ export function audioUrlOf(manifest?: string): string | undefined {
   return undefined
 }
 
-/** 只收 IG 自己的圖片、影片伺服器。訊息來自 IG 頁面，頁面上別的程式也能送；不認得的網址不下載 */
+/** 訊息來自 IG 頁面，頁面上別的程式也能偽造：只收 IG 的圖片、影片伺服器網址 */
 const igCdn = (url?: string) => (url && /^https:\/\/[^/]+\.(fbcdn\.net|cdninstagram\.com)\//.test(url) ? url : undefined)
 
 const num = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : undefined)
@@ -37,7 +36,6 @@ export function statsOf(it: Item): Post['stats'] {
   return Object.values(s).some((v) => v !== undefined) ? s : undefined
 }
 
-/** 縮圖網址：寬度至少 150 的候選圖裡最小的一張（輪播貼文用第一張）；都不到 150 就用最大的 */
 export function thumbUrlOf(it: Item): string | undefined {
   const list: Item[] = (it.image_versions2 ?? it.carousel_media?.[0]?.image_versions2)?.candidates ?? []
   const c = list.filter((x) => typeof x?.url === 'string').sort((a, b) => (a.width ?? 0) - (b.width ?? 0))
@@ -58,7 +56,6 @@ export function extractPosts(json: unknown, creator: string): CollectMessage | n
     for (const v of Object.values(it)) walk(v)
   })(json)
 
-  // 主播自己發的，加上合作貼文（發文者是別人、主播是共同作者）
   const isCreator = (u: Item | undefined) => u?.username?.toLowerCase() === creator
   const mine = items.filter((it) => [it.user, ...(it.coauthor_producers ?? []), ...(it.invited_coauthor_producers ?? [])].some(isCreator))
   if (!mine.length) return null
@@ -73,7 +70,7 @@ export function extractPosts(json: unknown, creator: string): CollectMessage | n
       caption: it.caption?.text ?? '',
       audioUrl: igCdn(audioUrlOf(it.video_dash_manifest)),
       videoUrl: igCdn(it.video_versions?.[0]?.url),
-      ...(statsOf(it) && { stats: statsOf(it) }), // 沒有數字就不帶這個欄位，免得合併時蓋掉之前存的
+      ...(statsOf(it) && { stats: statsOf(it) }),
       ...(igCdn(thumbUrlOf(it)) && { thumbUrl: igCdn(thumbUrlOf(it)) }),
     })),
   }

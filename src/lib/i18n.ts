@@ -1,12 +1,8 @@
-// 介面雙語：繁體中文、英文。預設跟著瀏覽器語言，設定裡可以改。
 // 不用 chrome.i18n.getMessage：它跟著瀏覽器固定，不能在執行中切換。
-// AI 產生的內容（萃取、知識庫、理論對位、腳本拆解）也用同一個語言。
-// 這個檔不能 import React：IG 頁面的內容腳本（bridge.ts）和背景程式也會打包它。React 的 hook 在 useLang.ts。
 
 export type Lang = 'zh-TW' | 'en'
 export type LangSetting = 'auto' | Lang
 
-/** 設定是 auto 就看瀏覽器語言：zh 開頭用中文，其他都用英文 */
 export function resolveLang(setting: LangSetting | undefined, uiLang: string): Lang {
   if (setting === 'zh-TW' || setting === 'en') return setting
   return uiLang.toLowerCase().startsWith('zh') ? 'zh-TW' : 'en'
@@ -16,7 +12,7 @@ export const browserLang = () => globalThis.chrome?.i18n?.getUILanguage?.() ?? g
 
 const zh = {
   'app.name': 'Instagram 創作者精選',
-  'app.shortName': 'Instagram 創作者精選', // 側邊欄寬 240px，英文全名放不下
+  'app.shortName': 'Instagram 創作者精選',
   'common.cancel': '取消',
   'common.delete': '刪除',
   'common.save': '儲存',
@@ -609,7 +605,6 @@ const listeners = new Set<() => void>()
 
 export const getLang = () => current
 
-/** 切換語言：畫面上用 useLang() 的元件會立刻重畫 */
 export function setLang(lang: Lang) {
   if (lang === current) return
   current = lang
@@ -622,18 +617,15 @@ export function subscribeLang(f: () => void) {
   return () => void listeners.delete(f)
 }
 
-/** 取字串，{名稱} 換成 vars 的值。lang 不給就用目前的語言 */
 export function t(key: Key, vars: Record<string, string | number> = {}, lang: Lang = current): string {
   let s = DICT[lang][key]
   for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v))
   return s
 }
 
-/** 含金量（資料裡固定存中文 高／中／低）顯示用的文字 */
 export const valueLabel = (v: string, lang: Lang = current) =>
   t(v === '高' ? 'value.high' : v === '低' ? 'value.low' : 'value.mid', {}, lang)
 
-/** hook 類型（資料裡固定存中文原字，統計才不會因為語言不同而分散）顯示用的文字 */
 const HOOK_KEYS: Record<string, Key> = {
   提問: 'hookType.question', 反常識: 'hookType.contrarian', 數字清單: 'hookType.list', 痛點: 'hookType.pain',
   故事開場: 'hookType.story', 身分喊話: 'hookType.callout', 結果先行: 'hookType.result', 爭議觀點: 'hookType.controversy',

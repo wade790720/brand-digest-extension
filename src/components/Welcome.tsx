@@ -9,7 +9,6 @@ import { checkGroqKey } from '@/lib/llm'
 import { getKnowledgeBase, getSettings, onStoreChange, saveSettings } from '@/lib/store'
 import type { Creator } from '@/types'
 
-/** 一個引導步驟：完成打勾、目前這步展開、還沒到的變淡 */
 function Step({ n, title, state, children }: { n: number; title: string; state: 'done' | 'now' | 'later'; children?: ReactNode }) {
   return (
     <li className={`flex gap-4 ${state === 'later' ? 'opacity-50' : ''}`}>
@@ -25,7 +24,6 @@ function Step({ n, title, state, children }: { n: number; title: string; state: 
   )
 }
 
-/** 沒有選主播時顯示。第一次使用是三步引導：金鑰 → 收集 → 第一份知識庫；三步都完成後只提示從左邊選主播。 */
 export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect: (name: string) => void }) {
   const [hasKey, setHasKey] = useState<boolean>()
   const [hasKb, setHasKb] = useState(false)
@@ -39,7 +37,6 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
       setHasKb((await Promise.all(creators.map((c) => getKnowledgeBase(c.name)))).some(Boolean))
     }
     load()
-    // 合併連續的變更（萃取時每則都會寫入好幾次），不然每次都把所有主播的知識庫讀一遍
     let timer: ReturnType<typeof setTimeout>
     const off = onStoreChange(() => (clearTimeout(timer), (timer = setTimeout(load, 300))))
     return () => (clearTimeout(timer), off())
@@ -55,10 +52,10 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
     if (problem) return setErr(problem)
     const s = await getSettings()
     await saveSettings({ ...s, keys: { ...s.keys, groq: k } })
-    setHasKey(true) // 開發預覽沒有 onStoreChange，這裡直接更新
+    setHasKey(true)
   }
 
-  if (hasKey === undefined) return null // 還在讀設定，避免閃一下引導畫面
+  if (hasKey === undefined) return null
 
   const hasCreator = creators.length > 0
   if (hasKey && hasCreator && hasKb) {

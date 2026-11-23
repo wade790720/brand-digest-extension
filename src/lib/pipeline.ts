@@ -7,12 +7,11 @@ import type { Creator, Digest, Post, Settings } from '@/types'
 export interface Progress {
   done: number
   total: number
-  status: string // 目前在做什麼，一行
-  codes?: string[] // 萃取時：這次要處理的貼文，拆解畫面用
-  current?: string // 萃取時：正在處理的那則；沒有＝都處理過了
+  status: string
+  codes?: string[]
+  current?: string
 }
 
-// 每則音軌下載之間的停頓（秒）：從 IG 的影片伺服器下載，和播放影片同一種請求，仍保持人的節奏
 const PAUSE_MIN = 3
 const PAUSE_MAX = 6
 
@@ -32,28 +31,24 @@ export function toDigest(raw: any): Digest {
     points: list(raw?.points),
     quotes: list(raw?.quotes),
     terms: list(raw?.terms),
-    // 資料裡固定存中文 高／中／低；英文模式下 AI 偶爾會翻成 High／Medium／Low，換回來
     value: VALUE_ALIAS[String(raw?.value ?? '').trim().toLowerCase()] ?? '中',
-    // 不在清單裡（例如被翻譯）算「其他」；沒給就不帶，畫面上不計數
     ...(raw?.hookType && { hookType: HOOK_TYPES.includes(String(raw.hookType).trim()) ? String(raw.hookType).trim() : '其他' }),
   }
 }
 
 async function download(p: Post, signal: AbortSignal): Promise<Blob> {
   const url = p.audioUrl ?? p.videoUrl!
-  const res = await fetch(url, { credentials: 'omit', signal }) // 不帶 IG 登入狀態
+  const res = await fetch(url, { credentials: 'omit', signal })
   if (res.status === 403 || res.status === 410)
     throw new Error(t('pipe.expired'))
   if (!res.ok) throw new Error(t('pipe.downloadFail', { status: res.status }))
   return res.blob()
 }
 
-/** 下載縮圖，縮成 160px 寬的 JPEG 存在貼文上。之後顯示都用這份，不再向 IG 要圖。
- *  失敗（網址過期、格式不支援）就算了：拆解畫面會顯示色塊，不影響萃取 */
 async function saveThumb(p: Post, signal: AbortSignal) {
   if (p.thumb || !p.thumbUrl) return
   try {
-    const res = await fetch(p.thumbUrl, { credentials: 'omit', signal }) // 同音軌，不帶 IG 登入狀態
+    const res = await fetch(p.thumbUrl, { credentials: 'omit', signal })
     if (!res.ok) return
     const img = await createImageBitmap(await res.blob(), { resizeWidth: 160, resizeQuality: 'medium' })
     const canvas = new OffscreenCanvas(img.width, img.height)
@@ -65,33 +60,28 @@ async function saveThumb(p: Post, signal: AbortSignal) {
       r.onerror = fail
       r.readAsDataURL(jpeg)
     })
-  } catch {
-    // 顯示色塊
-  }
+  } catch {}
 }
 
-/** 處理一位主播所有還沒完成的貼文：下載音軌 → 轉錄 → 萃取，最後整合成知識庫。
- *  金鑰錯誤、額度用完、重試後仍限流會停下整批（拋出 LlmError），停下前先用已完成的貼文整合知識庫；
- *  單則失敗只記在那一則，繼續下一則。 */
 export async function processCreator(creator: Creator, signal: AbortSignal, onProgress: (p: Progress) => void, limit?: number) {
   const settings = await getSettings()
   if (!settings.keys.groq) throw new LlmError(t('llm.groqNeeded'), 'auth')
-  const lang = getLang() // 這次產出的語言：開始時的介面語言
+  const lang = getLang()
   const posts = await getPosts(creator)
-  const todo = posts.filter((p) => p.status !== 'done').slice(0, limit) // limit：第一次先試幾則，快點看到成果
+  const todo = posts.filter((p) => p.status !== 'done').slice(0, limit)
   const codes = todo.map((p) => p.code)
   const report = (done: number, status: string) => onProgress({ done, total: todo.length, status, codes, current: codes[done] })
   let fatal: LlmError | undefined
 
   for (const [i, code] of codes.entries()) {
     if (signal.aborted) break
-    const p = await getPost(code) // 每則開始前讀最新的：收集可能在萃取途中換了新網址
+    const p = await getPost(code)
     if (!p) continue
     const label = t('pipe.label', { i: i + 1, n: todo.length })
     const step = (msg: string) => t('pipe.step', { label, msg })
     let downloaded = false
     try {
-      await saveThumb(p, signal) // 跟著下面的 updatePost 一起存
+      await saveThumb(p, signal)
       if (p.transcript === undefined) {
         if (p.audioUrl || p.videoUrl) {
           report(i, step(t('pipe.download')))
@@ -100,23 +90,21 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
           report(i, step(t('pipe.transcribe')))
           p.transcript = await transcribe(settings, audio, (m) => report(i, step(m)), signal)
         } else {
-          p.transcript = '' // 圖片貼文：只用文案
+          p.transcript = ''
         }
-        await updatePost(code, { transcript: p.transcript, thumb: p.thumb }) // 轉錄先存：萃取失敗時下次不用重新下載、轉錄
+        await updatePost(code, { transcript: p.transcript, thumb: p.thumb })
       }
       report(i, step(t('pipe.extract')))
       const json = parseJson(await generate(settings, digestSystem(lang), digestUser(p.caption, p.transcript), {
         json: true, onWait: (m) => report(i, step(m)), signal,
       }))
-      // 格式壞掉就算這則失敗，下次會重做；不要存成空白的「完成」
       if (!json) throw new LlmError(t('llm.badJson', { name: PROVIDER_NAMES[settings.provider] }), 'bad_json')
       p.digest = toDigest(json)
       p.status = 'done'
       p.processedAt = Date.now()
       p.error = undefined
     } catch (e) {
-      if (signal.aborted) break // 按了停止：這則不算失敗，下次從這則接著做
-      // rate 到這裡代表重試完還是限流或過載：下一則多半一樣，停下來免得白白消耗每日額度
+      if (signal.aborted) break
       if (e instanceof LlmError && ['auth', 'quota', 'model', 'rate', 'overload'].includes(e.kind)) {
         fatal = e
         break
@@ -124,7 +112,6 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
       p.status = 'error'
       p.error = e instanceof Error ? e.message : String(e)
     }
-    // 只寫萃取負責的欄位：收集在萃取途中更新的網址、互動數字不會被蓋掉
     await updatePost(code, { thumb: p.thumb, transcript: p.transcript, digest: p.digest, status: p.status, processedAt: p.processedAt, error: p.error })
     report(i + 1, step(p.status === 'done' ? t('common.done') : t('pipe.failed', { error: p.error ?? '' })))
     if (downloaded && i < todo.length - 1)
@@ -132,9 +119,8 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
   }
 
   if (signal.aborted) return
-  const kbProgress = (p: Progress) => onProgress({ ...p, codes }) // 整合知識庫時拆解畫面留著
+  const kbProgress = (p: Progress) => onProgress({ ...p, codes })
   if (fatal) {
-    // 停在半路也先整合已完成的部分。整合用同一個 AI，額度用完時這步多半也失敗，失敗就只回報原本的原因
     await buildKnowledgeBase(creator, settings, kbProgress, signal).catch(() => {})
     throw fatal
   }
@@ -142,13 +128,10 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
   onProgress({ done: 1, total: 1, status: t('common.done'), codes })
 }
 
-/** 跨篇整合成知識庫。內容超過模型一次能收的量，就分批整理再合併（Groq 免費方案需要）。
- *  每次呼叫的結果先暫存：額度在半路用完時，下次只做還沒做的批次。 */
 export async function buildKnowledgeBase(creator: Creator, settings: Settings, onProgress: (p: Progress) => void, signal?: AbortSignal) {
   const { posts, use } = await keptPosts(creator)
   if (!use.length) return
 
-  // 只送主題與知識點：金句、名詞不進知識庫，省 token
   const items = use.map((p, i) => ({ n: i + 1, topic: p.digest!.topic, points: p.digest!.points }))
   const budget = inputBudget(settings.provider)
   const batches: (typeof items)[] = [[]]
@@ -158,7 +141,6 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
     batches[batches.length - 1].push(it)
   }
 
-  // 進度：每批一步，分批時最後的合併算一步
   const total = batches.length + (batches.length > 1 ? 1 : 0)
   let step = 0
   let status = ''
@@ -170,7 +152,6 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
     onStart: () => say(`${status}${t('kb.batchSlow')}`), onWait: (m) => say(`${status}${m}`),
   })
   const tooLarge = (e: unknown) => e instanceof LlmError && e.kind === 'too_large'
-  // 字數只是估計：供應商算的 token 可能比預期多。被拒說太大，就對半切再送
   const digestBatch = async (b: typeof items): Promise<string[]> => {
     try {
       return [stripFence(await call(aggregateUser(creator.name, b.length, JSON.stringify(b), lang)))]
@@ -187,7 +168,6 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
     parts.push(...(await digestBatch(b)))
     step++
   }
-  // 分批的結果再合併，直到剩一份（每次合併也不能超過上限）
   while (parts.length > 1) {
     status = t('kb.merge', { n: parts.length })
     say(status)
@@ -201,12 +181,12 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
           next.push(stripFence(await call(mergeUser(creator.name, group, lang))))
         } catch (e) {
           if (!tooLarge(e)) throw e
-          next.push(...group) // 合併太大就不合，下面會接起來
+          next.push(...group)
         }
       }
     }
     if (next.length === parts.length) {
-      parts = [parts.join('\n\n')] // 每份都太大、無法再合：直接接起來，至少不遺失內容
+      parts = [parts.join('\n\n')]
       break
     }
     parts = next
@@ -224,20 +204,17 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
   await cached.clear()
 }
 
-/** 已完成的貼文，和篩掉低含金量後要整合的（全部都低就不篩）。use 的順序就是 [編號]。 */
 export async function keptPosts(creator: Creator) {
   const posts = (await getPosts(creator)).filter((p) => p.status === 'done' && p.digest)
   const kept = posts.filter((p) => p.digest!.value !== '低')
   return { posts, use: kept.length ? kept : posts }
 }
 
-/** 文末的來源索引：[n] 主題 — 連結。程式產生，保證每個 [編號] 都能追回原文。 */
 export const sourceIndex = (use: Post[], lang: Lang = getLang()) =>
   `## ${t('src.heading', {}, lang)}\n\n${use.map((p, i) => `${i + 1}. ${p.digest!.topic} — [${t('src.view', {}, lang)}](${postUrl(p.code)})`).join('\n')}`
 
 const VALUE_ALIAS: Record<string, Digest['value']> = { 高: '高', 中: '中', 低: '低', high: '高', medium: '中', mid: '中', low: '低' }
 
-/** 呼叫 AI，回應先暫存在 scope 底下：額度在半路用完時，下次同樣的請求直接用暫存。整理完成後呼叫 clear。 */
 export async function cachedCaller(scope: string, settings: Settings, signal?: AbortSignal) {
   const cache = await getCache(scope)
   return {
@@ -250,7 +227,6 @@ export async function cachedCaller(scope: string, settings: Settings, signal?: A
       await saveCache(scope, cache)
       return out
     },
-    /** 回應不能用（例如格式錯）就丟掉，下次重新問 */
     async forget(system: string, user: string) {
       delete cache[hash(system + user)]
       await saveCache(scope, cache)
@@ -259,7 +235,6 @@ export async function cachedCaller(scope: string, settings: Settings, signal?: A
   }
 }
 
-/** 暫存用的短鍵（FNV-1a），不用於安全用途 */
 function hash(s: string) {
   let h = 0x811c9dc5
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)

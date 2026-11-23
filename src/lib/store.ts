@@ -1,9 +1,6 @@
 import { t } from '@/lib/i18n'
 import type { Creator, KnowledgeBase, ModelStatus, Playbook, Post, Settings, TheoryDoc } from '@/types'
 
-// 資料全存在 chrome.storage.local（manifest 有 unlimitedStorage）。
-// 在一般網頁預覽（npm run dev）時沒有 chrome.storage，改用 localStorage，方便開發介面。
-// 開發預覽沒有 chrome.storage.onChanged：寫入時自己發事件，畫面才會跟著更新
 const DEV_CHANGE = 'brand-digest-store-change'
 
 const area = {
@@ -17,7 +14,6 @@ const area = {
     for (const [k, v] of Object.entries(items)) localStorage.setItem(k, JSON.stringify(v))
     dispatchEvent(new Event(DEV_CHANGE))
   },
-  /** 只列鍵名，不讀內容（貼文帶逐字稿和縮圖，整份讀很慢） */
   async keys(): Promise<string[]> {
     if (!globalThis.chrome?.storage) return Object.keys(localStorage)
     // getKeys 要 Chrome 130 以上；更舊的版本只能整份讀出來
@@ -41,7 +37,6 @@ export const DEFAULT_SETTINGS: Settings = {
   },
 }
 
-/** 設定下拉選單列出的模型。清單外的名稱可以選「自訂」自己輸入。 */
 export const MODEL_OPTIONS: Record<Settings['provider'], string[]> = {
   groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'],
   gemini: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
@@ -49,14 +44,13 @@ export const MODEL_OPTIONS: Record<Settings['provider'], string[]> = {
   anthropic: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5'],
 }
 
-/** key 是「供應商:模型」 */
 export async function getModelStatus(): Promise<Record<string, ModelStatus>> {
   return (await area.get(['modelStatus'])).modelStatus ?? {}
 }
 
 export async function setModelStatus(key: string, state: ModelStatus['state']) {
   const all = await getModelStatus()
-  if (all[key]?.state === state) return // 狀態沒變就不寫，避免每則萃取都觸發畫面重讀
+  if (all[key]?.state === state) return
   await area.set({ modelStatus: { ...all, [key]: { state, at: Date.now() } } })
 }
 
@@ -67,7 +61,6 @@ export async function getSettings(): Promise<Settings> {
 
 export const saveSettings = (s: Settings) => area.set({ settings: s })
 
-/** 側邊欄每次儲存有變動都會重讀：只讀主播索引，不碰貼文 */
 export async function getCreators(): Promise<Creator[]> {
   const keys = (await area.keys()).filter((k) => k.startsWith('creator:'))
   return (Object.values(await area.get(keys)) as Creator[]).sort((a, b) => b.codes.length - a.codes.length)
@@ -80,8 +73,7 @@ export async function getPosts(creator: Creator): Promise<Post[]> {
 
 export const getPost = async (code: string): Promise<Post | undefined> => (await area.get([`post:${code}`]))[`post:${code}`]
 
-/** 只改傳進來的欄位，其他欄位用儲存裡最新的。萃取用它存結果：收集可能在萃取途中更新了網址和互動數字。
- *  shortcut: 讀和寫之間沒有鎖，背景程式剛好在這幾毫秒內也寫同一則時仍可能蓋掉；要完全避免得讓收集和萃取寫不同的鍵 */
+/** shortcut: 讀和寫之間沒有鎖，背景程式剛好在這幾毫秒內也寫同一則時仍可能蓋掉；要完全避免得讓收集和萃取寫不同的鍵 */
 export async function updatePost(code: string, patch: Partial<Post>) {
   const cur = await getPost(code)
   if (cur) await area.set({ [`post:${code}`]: { ...cur, ...patch } })
@@ -93,8 +85,6 @@ export async function getKnowledgeBase(creator: string): Promise<KnowledgeBase |
 
 export const saveKnowledgeBase = (creator: string, kb: KnowledgeBase) => area.set({ [`kb:${creator}`]: kb })
 
-/** 收集：合併新貼文。已處理的轉錄、萃取保留；網址會更新（IG 的網址幾天後過期，重新滑到就換新的）。
- *  只有背景程式呼叫，所以 creator 索引只有一個寫入者，不會互相覆蓋。 */
 export async function mergeCollected(creator: string, fullName: string, posts: Omit<Post, 'status' | 'collectedAt'>[]) {
   const keys = posts.map((p) => `post:${p.code}`)
   const got = await area.get([`creator:${creator}`, ...keys])
@@ -109,7 +99,6 @@ export async function mergeCollected(creator: string, fullName: string, posts: O
       added++
     }
   }
-  // 依發文時間排序（新的在前）。不在這批的舊貼文，時間要另外讀，這裡先只排這批有的
   const known: Record<string, number> = {}
   for (const c of idx.codes) known[c] = ((updates[`post:${c}`] ?? got[`post:${c}`]) as Post | undefined)?.takenAt ?? -1
   const missing = idx.codes.filter((c) => known[c] === -1)
@@ -124,7 +113,6 @@ export async function mergeCollected(creator: string, fullName: string, posts: O
   return { added, total: idx.codes.length }
 }
 
-/** 多步驟整理途中每次 AI 回應的暫存（鍵是送出內容的雜湊）。scope 例如「kb:主播」「theory:主播:主題」。整理完成就清掉。 */
 export async function getCache(scope: string): Promise<Record<string, string>> {
   return (await area.get([`cache:${scope}`]))[`cache:${scope}`] ?? {}
 }
@@ -132,7 +120,6 @@ export async function getCache(scope: string): Promise<Record<string, string>> {
 export const saveCache = (scope: string, cache: Record<string, string> | null) =>
   cache ? area.set({ [`cache:${scope}`]: cache }) : area.remove([`cache:${scope}`])
 
-/** 知識庫「可行動清單」裡勾掉的項目，用項目原文當識別：重新整合後文字沒變的仍保留勾選 */
 export async function getChecks(creator: string): Promise<string[]> {
   return (await area.get([`checks:${creator}`]))[`checks:${creator}`] ?? []
 }
@@ -145,7 +132,6 @@ export async function getPlaybook(creator: string): Promise<Playbook | undefined
 
 export const savePlaybook = (creator: string, p: Playbook) => area.set({ [`playbook:${creator}`]: p })
 
-/** 一位主播的理論對位版，key 是主題 */
 export async function getTheories(creator: string): Promise<Record<string, TheoryDoc>> {
   return (await area.get([`theory:${creator}`]))[`theory:${creator}`] ?? {}
 }
@@ -165,14 +151,11 @@ export async function deleteCreator(creator: Creator) {
   const all = await area.get(null)
   const caches = Object.keys(all)
     .filter((k) => k === `cache:kb:${creator.name}` || k === `cache:script:${creator.name}` || k.startsWith(`cache:theory:${creator.name}:`))
-  // 合作貼文只存一份，另一位主播也列著的不能刪
   const shared = new Set(Object.entries(all).flatMap(([k, v]) => (k.startsWith('creator:') && k !== `creator:${creator.name}` ? (v as Creator).codes : [])))
   await area.remove([`creator:${creator.name}`, `kb:${creator.name}`, `theory:${creator.name}`, `checks:${creator.name}`, `playbook:${creator.name}`, ...caches,
     ...creator.codes.filter((c) => !shared.has(c)).map((c) => `post:${c}`)])
 }
 
-// —— 備份 ——
-// 金鑰不進備份：備份檔可能被傳出去。設定也不匯出，換電腦重填就好。
 const BACKUP_KEY = /^(creator|post|kb|theory|checks|playbook):/
 
 export async function exportAll() {
@@ -181,7 +164,6 @@ export async function exportAll() {
   return { app: 'brand-digest', version: 1, exportedAt: new Date().toISOString(), data }
 }
 
-/** 匯入備份。同一則貼文：本機已完成、備份沒完成就留本機的；知識庫和手冊留比較新的；主播的貼文清單取聯集。回傳匯入幾位主播。 */
 export async function importAll(backup: unknown): Promise<number> {
   const b = backup as { app?: string; data?: Record<string, unknown> }
   if (b?.app !== 'brand-digest' || typeof b.data !== 'object' || !b.data)
@@ -196,7 +178,6 @@ export async function importAll(backup: unknown): Promise<number> {
       const c = v as Creator
       data[k] = { ...c, codes: [...new Set([...c.codes, ...(old as Creator).codes])] }
     }
-    // 知識庫和手冊：留比較新的那份，匯入舊備份不會蓋掉本機剛整合好的
     if ((k.startsWith('kb:') || k.startsWith('playbook:')) && (old.updatedAt ?? 0) > ((v as KnowledgeBase).updatedAt ?? 0)) data[k] = old
     if (k.startsWith('theory:')) data[k] = { ...old, ...(v as object) }
     if (k.startsWith('checks:')) data[k] = [...new Set([...(old as string[]), ...(v as string[])])]
@@ -205,7 +186,6 @@ export async function importAll(backup: unknown): Promise<number> {
   return Object.keys(data).filter((k) => k.startsWith('creator:')).length
 }
 
-/** 主頁面用：儲存內容有變（例如背景程式收集到新貼文）就通知。 */
 export function onStoreChange(cb: () => void): () => void {
   if (!globalThis.chrome?.storage) {
     addEventListener(DEV_CHANGE, cb)

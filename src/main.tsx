@@ -9,9 +9,7 @@ import { getSettings } from '@/lib/store'
 
 captureErrors('brand-digest')
 
-// 跟著系統切換深色模式（shadcn 的主題用 .dark class）
 const dark = window.matchMedia('(prefers-color-scheme: dark)')
-// 切換時先暫停轉場：不然所有有顏色轉場的元素會同時漸變，拖出殘影
 const applyTheme = () => {
   const pause = document.createElement('style')
   pause.textContent = '*, *::before, *::after { transition: none !important }'
@@ -23,7 +21,6 @@ const applyTheme = () => {
 applyTheme()
 dark.addEventListener('change', applyTheme)
 
-// 先讀語言設定再畫面：App 一出現就要是使用者選的語言，不要先閃一下別的語言
 getSettings().then((s) => {
   setLang(resolveLang(s.lang, browserLang()))
   createRoot(document.getElementById('root')!).render(

@@ -2,7 +2,6 @@ import { t } from '@/lib/i18n'
 import { MODEL_OPTIONS, getModelStatus, setModelStatus } from '@/lib/store'
 import type { Provider, Settings } from '@/types'
 
-/** 給使用者看的錯誤。kind 決定要停下整批（auth、quota、model、重試後仍 rate）還是只跳過這一則。 */
 export class LlmError extends Error {
   readonly kind: 'auth' | 'quota' | 'model' | 'rate' | 'overload' | 'too_large' | 'bad_json' | 'other'
   readonly retryAfterSec?: number
@@ -58,12 +57,10 @@ async function callOnce(s: Settings, system: string, user: string, json: boolean
     const ask = (strict: boolean) => post(p, `${base}/chat/completions`, { authorization: `Bearer ${key}` }, {
       model, messages, temperature: 0.3, ...(strict ? { response_format: { type: 'json_object' } } : {}),
     }, signal)
-    // JSON 模式被拒就改用一般模式重問：提示詞本來就要求只回 JSON，呼叫端用 parseJson 容錯解析
     const r = await ask(json).catch((e) => (json && e instanceof LlmError && e.kind === 'bad_json' ? ask(false) : Promise.reject(e)))
     return r.choices?.[0]?.message?.content ?? ''
   }
   if (p === 'gemini') {
-    // 金鑰放 header，不放網址
     const r = await post(p, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       { 'x-goog-api-key': key }, {
         systemInstruction: { parts: [{ text: system }] },
@@ -72,8 +69,6 @@ async function callOnce(s: Settings, system: string, user: string, json: boolean
       }, signal)
     return (r.candidates?.[0]?.content?.parts ?? []).map((x: { text?: string }) => x.text ?? '').join('')
   }
-  // Anthropic：官方 SDK。金鑰是使用者自己的、只存在本機，所以允許在瀏覽器直接呼叫。
-  // 用到才載入：打包後約 200 KB，其他供應商的使用者不用付這個啟動成本
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 0 })
   try {
@@ -87,7 +82,6 @@ async function callOnce(s: Settings, system: string, user: string, json: boolean
   }
 }
 
-/** 等 ms 毫秒。按了停止就立刻結束並拋出，等待中的重試和排隊不用等完 */
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((ok, fail) => {
   if (signal?.aborted) return fail(signal.reason)
   const id = setTimeout(ok, ms)
@@ -95,9 +89,7 @@ const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((ok, fail)
 })
 const DAY = 24 * 60 * 60 * 1000
 
-/** 要依序試的模型：偏好的排第一，再來是同一家的其他模型（每個模型的額度分開算）。
- *  上次記錄額度用完（24 小時內）或找不到的先跳過；全部都跳過時仍試偏好的那個，因為記錄可能過時。
- *  ponytail: 只換同一家的模型。換供應商的話，每批送多少字（inputBudget）也要跟著變，做到一半換會出錯。 */
+/** ponytail: 只換同一家的模型。換供應商的話，每批送多少字（inputBudget）也要跟著變，做到一半換會出錯。 */
 async function candidates(prefix: string, preferred: string, others: string[]) {
   const st = await getModelStatus()
   const out = (m: string) => {
@@ -108,7 +100,6 @@ async function candidates(prefix: string, preferred: string, others: string[]) {
   return usable.length ? usable : [preferred]
 }
 
-/** 依序換模型呼叫 fn。額度用完或找不到模型就換下一個，其他錯誤直接拋出。 */
 async function withFallback<T>(prefix: string, models: string[], exhausted: string, onSwitch: ((m: string) => void) | undefined,
   fn: (model: string) => Promise<T>): Promise<T> {
   for (const [i, model] of models.entries()) {
@@ -127,9 +118,6 @@ async function withFallback<T>(prefix: string, models: string[], exhausted: stri
   throw new Error('unreachable')
 }
 
-/** 限流或伺服器忙會等一下自動重試（遵守 retry-after），其他錯誤直接拋出。 */
-/** 每分鐘上限（429）等一下一定會恢復，耐心等，最多約 10 分鐘；
- *  伺服器過載（5xx）重試 4 次還不行就停下，免得一直消耗每日額度。 */
 async function retryRate<T>(fn: () => Promise<T>, onWait?: (msg: string) => void, signal?: AbortSignal): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -144,23 +132,20 @@ async function retryRate<T>(fn: () => Promise<T>, onWait?: (msg: string) => void
   }
 }
 
-// —— 送出前排隊，不去撞每分鐘上限 ——
 // Groq 免費方案每個模型每分鐘 8000 token，留一點餘裕。其他供應商的上限高很多，不排隊。
 // ponytail: token 用「字數 × 1.2 + 1000（回答）」估；所有模型共用一張紀錄表（實際是每個模型分開算，這樣比較保守）
 const TPM: Partial<Record<Provider, number>> = { groq: 7000 }
 const sentLog: Partial<Record<Provider, { at: number; tokens: number }[]>> = {}
 
-/** 最近 60 秒已送出的量加上這次，超過上限就回傳要等幾毫秒，不用等回傳 0 */
 export function waitNeeded(log: { at: number; tokens: number }[], now: number, need: number, cap: number) {
-  const recent = log.filter((x) => now - x.at < 60_000) // 依送出時間排序，舊的在前
+  const recent = log.filter((x) => now - x.at < 60_000)
   let used = recent.reduce((n, x) => n + x.tokens, 0)
   if (used + need <= cap) return 0
-  // 等最舊的幾筆滿 60 秒、從紀錄裡掉出去，直到空出這次需要的量
   for (const x of recent) {
     used -= x.tokens
     if (used + need <= cap) return x.at + 60_000 - now
   }
-  return 0 // need 已經限制在 cap 以內，走不到這裡
+  return 0
 }
 
 async function pace(p: Provider, chars: number, onWait?: (msg: string) => void, signal?: AbortSignal) {
@@ -175,10 +160,8 @@ async function pace(p: Provider, chars: number, onWait?: (msg: string) => void, 
   log.splice(0, log.length, ...log.filter((x) => Date.now() - x.at < 60_000), { at: Date.now(), tokens: need })
 }
 
-/** 測試用：清掉排隊紀錄 */
 export const resetPacing = () => Object.keys(sentLog).forEach((k) => delete sentLog[k as Provider])
 
-/** 呼叫 AI。限流會等一下重試；這個模型額度用完，自動換同一家的下一個模型。 */
 export async function generate(s: Settings, system: string, user: string,
   opts: { json?: boolean; onWait?: (msg: string) => void; signal?: AbortSignal } = {}) {
   const p = s.provider
@@ -194,7 +177,6 @@ export async function generate(s: Settings, system: string, user: string,
 // 兩個 Whisper 模型的額度分開算：turbo 用完就換 large-v3
 const WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3']
 
-/** 轉錄一律用 Groq Whisper：免費額度夠用、速度快。瀏覽器裡用不到本機 GPU。 */
 export async function transcribe(s: Settings, audio: Blob, onWait?: (msg: string) => void, signal?: AbortSignal): Promise<string> {
   const key = s.keys.groq
   if (!key) throw new LlmError(t('llm.groqNeeded'), 'auth')
@@ -208,7 +190,6 @@ export async function transcribe(s: Settings, audio: Blob, onWait?: (msg: string
     })
     if (res.ok) return (await res.text()).trim()
     const err = classify(res.status, await res.text(), 'groq', res.headers.get('retry-after'))
-    // 訊息要講明是轉錄，也不能叫使用者換供應商：轉錄固定用 Groq，換了也沒用
     if (err.kind === 'quota') throw new LlmError(t('llm.whisperQuota', { model }), 'quota')
     throw err
   }
@@ -217,28 +198,22 @@ export async function transcribe(s: Settings, audio: Blob, onWait?: (msg: string
   return withFallback('whisper', models, exhausted, onWait, (m) => retryRate(() => once(m), onWait, signal))
 }
 
-/** 容錯解析 JSON：模型可能包 markdown 圍欄，或前後多講話。 */
 export function parseJson(raw: string): any {
   const tries = [raw, raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')]
   for (const t of tries) {
     try {
       return JSON.parse(t)
-    } catch {
-      /* 試下一種 */
-    }
+    } catch {}
   }
   const m = raw.match(/\{[\s\S]*\}/)
   if (m) {
     try {
       return JSON.parse(m[0])
-    } catch {
-      /* 放棄 */
-    }
+    } catch {}
   }
   return null
 }
 
-/** 驗證 Groq 金鑰：讀模型清單，不用額度。可以用回傳 null，不行回傳給使用者看的原因。 */
 export async function checkGroqKey(key: string): Promise<string | null> {
   try {
     const res = await fetch('https://api.groq.com/openai/v1/models', { headers: { authorization: `Bearer ${key}` } })

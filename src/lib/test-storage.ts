@@ -1,4 +1,3 @@
-// 測試用：記憶體版的 localStorage，讓 store 在沒有 chrome.storage 時照常運作（store 用 Object.keys 列出鍵）
 import { vi } from 'vitest'
 
 const ls: Record<string, string> = {}

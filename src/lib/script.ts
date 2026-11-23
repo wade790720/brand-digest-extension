@@ -1,8 +1,3 @@
-// 腳本拆解：分析主播「怎麼說」（hook、腳本結構、CTA、文案公式、說服手法），不是「說什麼」。
-// 1. 逐則拆解：每則一次 AI 請求，結果存在貼文上（post.script），之後不重做
-// 2. 數據表：程式依 hook 類型算平均播放、按讚，不交給 AI 算
-// 3. 整合：AI 把所有拆解歸納成這位主播的寫法手冊，附可以直接套用的模板
-
 import { getLang, hookTypeLabel, t, type Key, type Lang } from '@/lib/i18n'
 import { LlmError, generate, inputBudget, parseJson } from '@/lib/llm'
 import { cachedCaller, sourceIndex, stripFence, type Progress } from '@/lib/pipeline'
@@ -66,7 +61,6 @@ const mergeUser = (creator: string, parts: string[], lang: Lang) =>
 
 ${parts.map((p, i) => `【第 ${i + 1} 批】\n${p}`).join('\n\n')}`
 
-/** AI 回的拆解 JSON 欄位可能缺、型別可能不對，整理成固定格式。連 hook 都沒有就當作失敗 */
 export function toBreakdown(raw: any): ScriptBreakdown | null {
   const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
   const hook = str(raw?.hook)
@@ -84,7 +78,6 @@ export function toBreakdown(raw: any): ScriptBreakdown | null {
   }
 }
 
-/** 依 hook 類型統計：則數、平均播放、平均按讚。只算有數字的貼文，依平均播放（沒有就按讚）由高到低 */
 export function hookStats(posts: Post[]) {
   const groups = new Map<string, Post[]>()
   for (const p of posts) {
@@ -99,7 +92,6 @@ export function hookStats(posts: Post[]) {
     .sort((a, b) => (b.plays ?? b.likes ?? -1) - (a.plays ?? a.likes ?? -1))
 }
 
-/** 數據表 Markdown。沒有任何互動數字就回傳空字串 */
 export function statsTable(rows: ReturnType<typeof hookStats>, lang: Lang = getLang()) {
   if (!rows.some((r) => r.plays !== undefined || r.likes !== undefined)) return ''
   const n = (v?: number) => (v === undefined ? '—' : v.toLocaleString('zh-TW'))
@@ -114,10 +106,9 @@ export function statsTable(rows: ReturnType<typeof hookStats>, lang: Lang = getL
   ].join('\n')
 }
 
-/** 逐則拆解（已拆過的跳過），再整合成寫法手冊並存檔。額度或金鑰問題會停下整批（拋出 LlmError） */
 export async function buildPlaybook(creator: Creator, signal: AbortSignal, onProgress: (p: Progress) => void) {
   const settings = await getSettings()
-  const lang = getLang() // 這次產出的語言：開始時的介面語言
+  const lang = getLang()
   const posts = (await getPosts(creator)).filter((p) => p.status === 'done' && (p.transcript || p.caption))
   if (!posts.length) throw new Error(t('script.noPosts', { name: creator.name }))
   const todo = posts.filter((p) => !p.script)
@@ -131,7 +122,7 @@ export async function buildPlaybook(creator: Creator, signal: AbortSignal, onPro
         json: true, onWait: (m) => onProgress({ done: i, total: todo.length + 1, status: `${label}：${m}` }), signal,
       })
       const b = toBreakdown(parseJson(raw))
-      if (b) await updatePost(p.code, { script: b }) // 格式壞掉的這則先略過，下次再拆
+      if (b) await updatePost(p.code, { script: b })
     } catch (e) {
       if (e instanceof LlmError && ['auth', 'quota', 'model', 'rate', 'overload'].includes(e.kind)) throw e
     }
@@ -153,7 +144,6 @@ export async function buildPlaybook(creator: Creator, signal: AbortSignal, onPro
     ...(p.stats?.likes !== undefined && { likes: p.stats.likes }),
   }))
 
-  // 內容超過模型一次能收的量就分批，再合併（同知識庫的做法）
   const budget = inputBudget(settings.provider)
   const batches: (typeof items)[] = [[]]
   for (const it of items) {

@@ -9,7 +9,6 @@ import type { KnowledgeBase, Post } from '@/types'
 
 const FEW = 5 // ponytail: 少於 5 則的平均很容易被一支爆紅影片拉高，只標示不隱藏
 
-/** 知識庫最上面的一頁總覽：在教什麼、幾個數字、最常用的開場，底部是下一步和俱樂部 */
 export function KbDashboard({ kb, posts, actions, clubDismissed, onDismissClub }: {
   kb: KnowledgeBase
   posts: Post[]
@@ -65,7 +64,6 @@ export function KbDashboard({ kb, posts, actions, clubDismissed, onDismissClub }
         )}
       </div>
 
-      {/* 原本是兩條各自的提示（俱樂部、下一步），併成儀表板底部一列 */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t pt-4 text-sm">
         <a href={CLASSROOM_URL} target="_blank" rel="noreferrer" className="min-w-0 flex-1 text-[var(--primary-text)] underline-offset-4 hover:underline">
           {t('cv.nextStep')}

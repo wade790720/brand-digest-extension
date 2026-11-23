@@ -26,22 +26,21 @@ type Task = (c: Creator, signal: AbortSignal, onProgress: (p: Progress) => void)
 export interface Run {
   creator: string
   progress: Progress
-  startedAt: number // 這次開始的時間：拆解畫面用它估剩餘時間
+  startedAt: number
 }
 
 export default function App() {
-  const lang = useLang() // 切換語言時整個畫面重畫
-  useEffect(() => void (document.title = t('app.name')), [lang]) // 瀏覽器分頁標題也跟著換
+  const lang = useLang()
+  useEffect(() => void (document.title = t('app.name')), [lang])
   const [creators, setCreators] = useState<Creator[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toDelete, setToDelete] = useState<Creator | null>(null)
   const [run, setRun] = useState<Run | null>(null)
-  const [stopped, setStopped] = useState<{ creator: string; reason: string } | null>(null) // 上次為什麼停下
+  const [stopped, setStopped] = useState<{ creator: string; reason: string } | null>(null)
   const abort = useRef<AbortController | null>(null)
-  const lastTask = useRef<{ task: Task; doneMsg: string } | null>(null) // 停下時「繼續」重跑它；每一步都有暫存，重跑就是接著做
+  const lastTask = useRef<{ task: Task; doneMsg: string } | null>(null)
 
-  // 主播清單和語言設定：背景程式收集到新貼文、或設定改了語言時即時更新（合併連續的變更，避免一直重讀）
   const reload = useCallback(() => Promise.all([getCreators(), getSettings()]).then(([list, s]) => {
     setCreators(list)
     setLang(resolveLang(s.lang, browserLang()))
@@ -52,7 +51,6 @@ export default function App() {
     return onStoreChange(() => (clearTimeout(timer), (timer = setTimeout(reload, 400))))
   }, [reload])
 
-  // 處理中離開頁面會中斷，提醒使用者
   useEffect(() => {
     if (!run) return
     const warn = (e: BeforeUnloadEvent) => e.preventDefault()
@@ -62,7 +60,6 @@ export default function App() {
 
   const current = creators.find((c) => c.name === selected)
 
-  /** 一次只跑一件事（萃取或理論對位），進度和停止原因都顯示在這位主播的頁面上 */
   async function runTask(creator: Creator, task: Task, doneMsg: string) {
     if (run) return
     lastTask.current = { task, doneMsg }
@@ -75,7 +72,7 @@ export default function App() {
       await task(creator, ctrl.signal, (progress) => setRun({ creator: creator.name, progress, startedAt }))
       if (!ctrl.signal.aborted) toast.success(doneMsg)
     } catch (e) {
-      if (ctrl.signal.aborted) return // 按了停止：中斷進行中的請求會拋錯，不算失敗
+      if (ctrl.signal.aborted) return
       const msg = e instanceof Error ? e.message : String(e)
       toast.error(msg, { duration: 10000 })
       setStopped({ creator: creator.name, reason: msg })
@@ -97,7 +94,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground md:flex-row">
-      {/* 窄螢幕時側邊欄移到上方、限制高度，主畫面才不會被擠到只剩一條 */}
       <aside className="flex max-h-[40vh] w-full shrink-0 flex-col border-b bg-sidebar text-sidebar-foreground md:max-h-none md:w-60 md:border-r md:border-b-0">
         <button className="flex h-12 items-center gap-2 px-3 text-left" onClick={() => setSelected(null)}>
           <img src="/icons/icon-48.png" alt="" className="size-6 rounded-md" />
@@ -105,12 +101,10 @@ export default function App() {
         </button>
         <Separator />
         <p className="px-4 pt-4 pb-2 text-xs text-muted-foreground">{t('app.creators')}</p>
-        {/* 原生捲動：Radix ScrollArea 內層是 display: table，會把整列撐寬，右邊的「⋯」選單被切掉 */}
         <div className="min-h-0 flex-1 overflow-y-auto px-2">
           {creators.length === 0 && <p className="px-2 py-1 text-sm text-muted-foreground">{t('app.noCreators')}</p>}
           {creators.map((c) => {
             const on = c.name === selected
-            // 「⋯」平常隱藏，滑過、鍵盤移到這列、選中或選單開著時才出現，出現時蓋住則數（同 Instagram 整理師）
             return (
               <div key={c.name} className={cn('group relative flex items-center rounded-md', on ? 'bg-accent' : 'hover:bg-accent/60')}>
                 <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 py-1.5 text-left text-sm"

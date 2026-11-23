@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { setLang } from './i18n'
-setLang('zh-TW') // 期望值是中文；不依賴這台電腦的系統語言
+setLang('zh-TW')
 import { cleanMd, fit, saturation, saturationNote, skeletonToText, textToSkeleton } from './theory'
 
 describe('cleanMd', () => {
@@ -37,7 +37,6 @@ describe('理論骨架文字格式', () => {
 })
 
 describe('飽和度', () => {
-  // 第 1 則最新、第 3 則最舊；最舊的兩則就講完全部觀念
   const m = { mapped: { 'T1.1': ['3-1', '1-1'], 'T1.2': ['2-1'] }, unique: [{ ids: ['3-2'], point: 'x' }], conflicts: [] }
   it('依發文時間累計觀念數', () => {
     expect(saturation([300, 200, 100], m)).toEqual([2, 3, 3])

@@ -6,7 +6,7 @@ import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
-      theme="system" // 跟著系統深淺色，和 main.tsx 切換 .dark 的方式一致
+      theme="system"
       className="toaster group"
       icons={{
         success: (

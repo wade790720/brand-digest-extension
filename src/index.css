@@ -1,19 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-/* Shared brand tokens (copy of Documents/Codex/brand-guidelines/brand.css). Change layout, spacing and type there,
-   not here. The only thing this product overrides is the accent, right below. */
 @import "./brand.css";
 
-/* 強調色：對應橘色球體圖示（brand.css 的紫色是 Sai 的）。
-   對比：白字在 #c24700 上 5.0:1；#c24700 當文字在淺色背景上 4.8:1；#ff801f 在深色背景上 7.8:1 */
 :root { --primary: #c24700; --ring: #c24700; --primary-text: #c24700; }
 .dark { --ring: #ff801f; --primary-text: #ff801f; }
 
 @plugin "@tailwindcss/typography";
 
-/* 點出處 [n] 捲到來源索引時：主色光沿邊框由左掃到右再淡出。
-   參考 Aceternity signup form 輸入框的 hover（放射漸層當邊框，顏色改用品牌主色）；這裡沒有游標，改成自己掃過去 */
 @property --flash-x {
   syntax: '<percentage>';
   inherits: false;
@@ -22,17 +16,16 @@
 
 .source-flash {
   position: relative;
-  width: fit-content; /* 邊框貼著文字，不要橫跨整列 */
+  width: fit-content;
 }
 
 .source-flash::before {
   content: '';
   position: absolute;
-  inset: -0.25em -0.5em -0.25em -2em; /* 左邊多留，把清單編號框進來 */
+  inset: -0.25em -0.5em -0.25em -2em;
   border-radius: var(--radius);
   padding: 2px;
   background: radial-gradient(100px circle at var(--flash-x) 50%, var(--primary), transparent 80%);
-  /* 只留 padding 那一圈：中間挖空，變成邊框 */
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   pointer-events: none;
   animation: source-flash 1.4s ease-out forwards;
@@ -64,7 +57,6 @@
   }
 }
 
-/* 萃取時翻出的精華卡：每張新卡像翻牌一樣轉正 */
 .essence-card {
   animation: card-flip 500ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }

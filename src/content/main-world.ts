@@ -1,5 +1,4 @@
-// 在 IG 頁面的 MAIN world、document_start 執行：在 IG 的程式載入前接上 XHR/fetch，
-// 「旁聽」IG 自己收到的 graphql 回應。這裡不發任何請求，只讀頁面本來就收到的資料。
+// MAIN world、document_start：要在 IG 的程式拿到 XHR/fetch 之前換掉它們。
 import { extractPosts, profileOf } from '@/lib/parse'
 
 const SOURCE = 'brand-digest'

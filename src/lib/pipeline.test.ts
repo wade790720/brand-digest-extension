@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { Creator, Post } from '@/types'
 
-import { mem } from './test-storage' // 跑真的 store，資料存在記憶體
+import { mem } from './test-storage'
 
 const { processCreator } = await import('./pipeline')
 const { deleteCreator, getPosts, mergeCollected, saveSettings } = await import('./store')
@@ -13,14 +13,12 @@ const creator: Creator = { name: 'coach', fullName: '', codes: ['A'] }
 const seed = (p: Partial<Post> = {}) =>
   mem.set('post:A', JSON.stringify({ code: 'A', creator: 'coach', takenAt: 1, caption: '開場三秒', collectedAt: 0, status: 'new', ...p }))
 
-// AI 回傳的內容；onChat 讓測試在 AI 回答之前做別的事（例如模擬背景程式收集）
 let reply = '{"topic":"t","points":["p"],"quotes":[],"terms":[],"value":"高"}'
 let onChat = async () => {}
 
 beforeEach(async () => {
   mem.clear()
   mem.set('creator:coach', JSON.stringify(creator))
-  // OpenAI 不排隊（Groq 每分鐘上限的排隊會讓測試等很久）；Groq 金鑰轉錄要用，仍要填
   await saveSettings({ provider: 'openai', keys: { groq: 'k', openai: 'k' }, models: { openai: 'gpt-4o-mini' } } as never)
   onChat = async () => {}
   vi.stubGlobal('fetch', async () => {
@@ -43,7 +41,7 @@ it('AI 回的 JSON 壞掉：這則算失敗，下次會重做，不是空白的�
 it('萃取途中收集到的新數字和網址，萃取存檔時不會被舊的蓋掉', async () => {
   seed({ stats: { likes: 1 }, audioUrl: undefined })
   onChat = async () => {
-    onChat = async () => {} // 只在萃取那次呼叫時收集一次；之後整合知識庫的呼叫不再收集
+    onChat = async () => {}
     await mergeCollected('coach', '', [{ code: 'A', creator: 'coach', takenAt: 1, caption: '開場三秒', stats: { likes: 999 }, thumbUrl: 'https://x.cdninstagram.com/t.jpg' }])
   }
   await run()

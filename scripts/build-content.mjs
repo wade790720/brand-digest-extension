@@ -1,4 +1,4 @@
-// content script 不能是 ES module，用 esbuild 打成 IIFE，放進 vite 的輸出資料夾 dist/。
+// content script 不能是 ES module，所以用 esbuild 打成 IIFE。
 import path from 'node:path'
 import { build } from 'esbuild'
 

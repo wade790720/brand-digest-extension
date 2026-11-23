@@ -1,11 +1,3 @@
-// 理論對位：把碎片化的乾貨掛到既有理論上，組成可用的公式。移植自 Python 版 brand-digest 的 pipeline/theory.py。
-//
-// 和知識庫的差別：知識庫由下往上分群；這裡上下夾擊：
-//   1. 骨架：AI 依主題列出既有理論與子原則（使用者可以改了再跑）
-//   2. 對位：每條乾貨掛到子原則；掛不上的是「獨門心法」，和理論衝突的記下來
-//   3. 組裝：每個理論把多則碎片合成公式，附理論機制與適用條件，最後一份總結
-// 另外用程式算「飽和曲線」：依發文時間，第幾則之後就不再出現新觀念。
-
 import { getLang, t, type Lang } from '@/lib/i18n'
 import { generate, inputBudget, parseJson } from '@/lib/llm'
 import { cachedCaller, keptPosts, sourceIndex, stripFence, type Progress } from '@/lib/pipeline'
@@ -40,7 +32,6 @@ ${fragments}
 const synthSystem = (lang: Lang) => `你是知識體系建構專家，擅長把零碎經驗組成可以照著做的公式。
 ${t('ai.lang', {}, lang)}輸出 Markdown，不要包程式碼圍欄。`
 
-// 組裝拆成「每個理論一次」＋「總結一次」：單次請求小，免費方案（例如 Groq 每分鐘 8000 token）也跑得動
 const CITE_RULE = '[編號] 是「則編號」（碎片id 橫線前的數字），只能用資料裡出現過的，例如 [3][17]。'
 
 const theoryUser = (creator: string, topic: string, th: Theory, mapped: string, lang: Lang) =>
@@ -84,7 +75,6 @@ ${conflicts}
 【沒有碎片的子原則】
 ${gaps}`
 
-/** 每批最多幾條碎片。上限大的模型也不要一次全送：一批太多，對位判斷會變粗 */
 const MAP_BATCH_MAX = 300
 
 export interface Mapping {
@@ -93,13 +83,9 @@ export interface Mapping {
   conflicts: { ids: string[]; node: string; note: string }[]
 }
 
-// —— 不呼叫 AI 的部分（theory.test.ts 有測） ——
-
-/** 給使用者編輯的純文字格式：一行理論「名稱｜出處」，底下每行「- 子原則」，理論之間空一行。 */
 export const skeletonToText = (sk: Theory[]) =>
   sk.map((t) => [t.name + (t.source ? `｜${t.source}` : ''), ...t.principles.map((p) => `- ${p.name}`)].join('\n')).join('\n\n')
 
-/** skeletonToText 的反向。id 依順序重新編。沒列子原則的理論，用理論本身當唯一的子原則，才有地方對位。 */
 export function textToSkeleton(text: string): Theory[] {
   const raw: { name: string; source: string; principles: string[] }[] = []
   for (const line of text.split('\n').map((l) => l.trim())) {
@@ -119,9 +105,7 @@ export function textToSkeleton(text: string): Theory[] {
   }))
 }
 
-/** 整理 AI 輸出的 Markdown。subLevel：理論小節裡，第一行以外的標題（子原則）一律降成 ####。 */
 export function cleanMd(raw: string, subLevel = false) {
-  // AI 常把出處寫成碎片id（[3-2] 或表格裡的 3‑2），改回則編號 [3]
   let md = stripFence(raw)
     .replace(/\[(\d+)[-‑–]\d+\]/g, '[$1]')
     .replace(/(?<![[\d.\-‑–])(\d{1,3})[-‑–]\d{1,2}(?=[：:，、）)\s])/g, '[$1]')
@@ -132,8 +116,6 @@ export function cleanMd(raw: string, subLevel = false) {
   return md
 }
 
-/** 依發文時間順序，每多看一則，累計出現過幾個不同的觀念（子原則＋獨門群組）。曲線變平＝後面在重複前面講過的。
- *  takenAt[n-1] 是第 n 則的發文時間。 */
 export function saturation(takenAt: number[], m: Mapping): number[] {
   const concepts = new Map<string, Set<string>>()
   const add = (fid: string, c: string) => {
@@ -155,7 +137,6 @@ export function saturationNote(curve: number[], lang: Lang = getLang()) {
   return `_${t('theory.saturation', { at80, pct: Math.floor((at80 * 100) / curve.length), n: curve.length, last }, lang)}_`
 }
 
-/** AI 回的對位 JSON 欄位可能缺、型別可能不對，整理成固定格式 */
 function toMapping(raw: any): Mapping {
   const ids = (v: unknown) => (Array.isArray(v) ? v.map(String) : [])
   const mapped: Record<string, string[]> = {}
@@ -168,7 +149,6 @@ function toMapping(raw: any): Mapping {
   }
 }
 
-/** 文字超過上限就從後面截掉整行，最後註明。給送不進一次請求的長清單用。 */
 export function fit(lines: string[], max: number) {
   let out = ''
   for (const [i, l] of lines.entries()) {
@@ -178,12 +158,8 @@ export function fit(lines: string[], max: number) {
   return out.trimEnd()
 }
 
-// —— 呼叫 AI 的部分 ——
-
-/** 不填主題時存的是「全部內容」（資料裡的固定值），給 AI 和文件看的要換成目前語言 */
 const topicName = (topic: string, lang: Lang) => (topic === '全部內容' ? t('theory.all', {}, lang) : topic)
 
-/** 請 AI 依主題提出理論骨架。不存檔：使用者確認或修改後才存。 */
 export async function proposeSkeleton(creator: Creator, topic: string): Promise<Theory[]> {
   const settings = await getSettings()
   const { use } = await keptPosts(creator)
@@ -193,17 +169,15 @@ export async function proposeSkeleton(creator: Creator, topic: string): Promise<
   const data = parseJson(await generate(settings, skeletonSystem(lang), skeletonUser(topicName(topic, lang), topics), { json: true }))
   const list = Array.isArray(data) ? data : data?.theories
   if (!Array.isArray(list) || !list.length) throw new Error(t('theory.badSkeleton'))
-  // 走一次文字格式：順便編好 id、補上沒列子原則的理論
   return textToSkeleton(list.map((th: any) => [
     `${th?.name ?? ''}${th?.source ? `｜${th.source}` : ''}`,
     ...(Array.isArray(th?.principles) ? th.principles : []).map((p: any) => `- ${typeof p === 'string' ? p : p?.name ?? ''}`),
   ].join('\n')).join('\n\n'))
 }
 
-/** 產生理論對位版並存檔。每次 AI 回應都先暫存，額度在半路用完時，下次從停下的地方繼續。 */
 export async function buildTheory(creator: Creator, topic: string, skeleton: Theory[], signal: AbortSignal, onProgress: (p: Progress) => void) {
   const settings = await getSettings()
-  const lang = getLang() // 這次產出的語言：開始時的介面語言
+  const lang = getLang()
   const shownTopic = topicName(topic, lang)
   const { use } = await keptPosts(creator)
   const frags: Record<string, string> = {}
@@ -212,7 +186,6 @@ export async function buildTheory(creator: Creator, topic: string, skeleton: The
 
   const budget = inputBudget(settings.provider)
   const skText = skeleton.map((t) => [`${t.id} ${t.name}`, ...t.principles.map((p) => `  ${p.id} ${p.name}`)].join('\n')).join('\n')
-  // 碎片分批對位：一次全送會超過模型上限；分批送內容少，判斷也比較準
   const room = Math.max(budget - skText.length - 800, 1000)
   const batches: string[][] = [[]]
   for (const [k, v] of Object.entries(frags)) {
@@ -222,7 +195,7 @@ export async function buildTheory(creator: Creator, topic: string, skeleton: The
   }
 
   let step = 0
-  let total = batches.length + skeleton.length + 1 // 對位完才知道幾個理論有碎片，到時再修正
+  let total = batches.length + skeleton.length + 1
   const say = (status: string) => onProgress({ done: step, total, status })
   const cached = await cachedCaller(`theory:${creator.name}:${topic}`, settings, signal)
   const ask = (status: string, system: string, user: string, json = false) =>
@@ -236,7 +209,7 @@ export async function buildTheory(creator: Creator, topic: string, skeleton: The
     say(status)
     const user = mapUser(skText, b.join('\n'))
     const raw = parseJson(await ask(status, mapSystem(lang), user, true))
-    if (!raw) await cached.forget(mapSystem(lang), user) // 格式壞掉：這批略過，下次重新問
+    if (!raw) await cached.forget(mapSystem(lang), user)
     const part = toMapping(raw)
     for (const [node, ids] of Object.entries(part.mapped)) (m.mapped[node] ??= []).push(...ids)
     m.unique.push(...part.unique)
@@ -246,7 +219,6 @@ export async function buildTheory(creator: Creator, topic: string, skeleton: The
 
   const names: Record<string, string> = {}
   for (const t of skeleton) for (const p of t.principles) names[p.id] = `${p.name}（${t.name}）`
-  // AI 偶爾會編出骨架沒有的節點 id、或不存在的碎片 id，直接丟掉
   const hits: Record<string, string[]> = {}
   for (const [n, ids] of Object.entries(m.mapped)) if (names[n]) hits[n] = [...new Set(ids.filter((f) => frags[f]))]
   const uniqueIds = m.unique.flatMap((g) => g.ids).filter((f) => frags[f])
@@ -281,7 +253,6 @@ export async function buildTheory(creator: Creator, topic: string, skeleton: The
   const summary = cleanMd(await ask(t('theory.summaryStep'), synthSystem(lang), summaryUser(creator.name, shownTopic,
     fit(nodes, room2), fit(unique, room2) || '（無）', fit(conflicts, room2) || '（無）', fit(gaps, 1500) || '（無）', lang)))
 
-  // 總結裡「獨門心法」之前的段落放最前面，理論小節插在中間（標題用這次產出的語言）
   const uniqueH = `## ${t('theory.hUnique', {}, lang)}`
   const [head, ...tail] = summary.split(uniqueH)
   const md = `${head.trim()}\n\n## ${t('theory.hMapped', {}, lang)}\n\n${sections.join('\n\n')}` +

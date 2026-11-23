@@ -1,7 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { ModelStatus, Settings } from '@/types'
 
-// 模型狀態存在記憶體裡，不碰 chrome.storage
 const status: Record<string, ModelStatus> = {}
 vi.mock('@/lib/store', () => ({
   MODEL_OPTIONS: { groq: ['a', 'b'], gemini: [], openai: [], anthropic: [] },
@@ -10,7 +9,7 @@ vi.mock('@/lib/store', () => ({
 }))
 const { generate, LlmError, resetPacing, waitNeeded } = await import('./llm')
 const { setLang } = await import('./i18n')
-setLang('zh-TW') // 期望的錯誤訊息是中文；不依賴這台電腦的系統語言
+setLang('zh-TW')
 
 const settings = { provider: 'groq', keys: { groq: 'k' }, models: { groq: 'a' } } as unknown as Settings
 let calls: string[] = []
@@ -60,8 +59,8 @@ it('JSON 模式被 Groq 拒絕，改用一般模式重問', async () => {
 
 it('排隊：最近 60 秒加上這次超過上限，就等最舊的幾筆過期', () => {
   const log = [{ at: 0, tokens: 3000 }, { at: 10_000, tokens: 3000 }]
-  expect(waitNeeded(log, 20_000, 1000, 7000)).toBe(0) // 6000 + 1000 剛好不超過
-  expect(waitNeeded(log, 20_000, 2000, 7000)).toBe(40_000) // 等第一筆在 60 秒時過期
-  expect(waitNeeded(log, 20_000, 5000, 7000)).toBe(50_000) // 要等兩筆都過期
-  expect(waitNeeded(log, 65_000, 5000, 7000)).toBe(5000) // 第一筆已過期：3000 + 5000 仍超過，等第二筆
+  expect(waitNeeded(log, 20_000, 1000, 7000)).toBe(0)
+  expect(waitNeeded(log, 20_000, 2000, 7000)).toBe(40_000)
+  expect(waitNeeded(log, 20_000, 5000, 7000)).toBe(50_000)
+  expect(waitNeeded(log, 65_000, 5000, 7000)).toBe(5000)
 })

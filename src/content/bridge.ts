@@ -1,6 +1,4 @@
 // ISOLATED world：MAIN world 拿不到 chrome.runtime，由這裡把收集到的貼文轉交背景程式。
-// 只接受同一頁面、標記為 brand-digest 的訊息。
-// 收集前先在頁面右下角問使用者：只是進來看一下，不該擅自收集。
 import { browserLang, resolveLang, t, type Lang } from '@/lib/i18n'
 import type { CollectMessage, Settings } from '@/types'
 import { ConsentGate } from './consent'
@@ -13,9 +11,7 @@ const alive = () => !!chrome.runtime?.id
 
 function send(msg: CollectMessage) {
   if (!alive()) return
-  chrome.runtime.sendMessage(msg).catch(() => {
-    // 背景程式重啟中：這批略過，使用者再滑一下就會補上
-  })
+  chrome.runtime.sendMessage(msg).catch(() => {})
 }
 
 window.addEventListener('message', (e) => {
@@ -32,7 +28,7 @@ setInterval(() => gate.navigate(location.pathname) && hide(), 1000)
 async function ask(creator: string) {
   const known = alive() ? ((await chrome.storage.local.get(`creator:${creator}`))[`creator:${creator}`] as { codes: string[] } | undefined) : undefined
   const lang = await currentLang()
-  if (gate.creator !== creator || gate.decision !== 'ask') return // 讀儲存的空檔裡已經離開或回答了
+  if (gate.creator !== creator || gate.decision !== 'ask') return
   const app = t('app.name', {}, lang)
   show(
     lang,
@@ -45,14 +41,13 @@ async function ask(creator: string) {
           gate.accept().forEach(send)
           show(lang, t('ig.started', {}, lang), t('ig.startedBody', {}, lang), [])
           const shown = toast
-          setTimeout(() => toast === shown && hide(), 3000) // 這 3 秒內換了別的提示就不關
+          setTimeout(() => toast === shown && hide(), 3000)
         },
       },
     ],
   )
 }
 
-/** 語言跟擴充功能的設定走（沒設就看瀏覽器），每次跳出提示時讀一次 */
 async function currentLang(): Promise<Lang> {
   const { settings } = alive() ? ((await chrome.storage.local.get('settings')) as { settings?: Settings }) : {}
   return resolveLang(settings?.lang, browserLang())
@@ -61,7 +56,7 @@ async function currentLang(): Promise<Lang> {
 function show(lang: Lang, title: string, body: string, buttons: { label: string; primary: boolean; onClick: () => void }[]) {
   hide()
   toast = document.createElement('div')
-  const root = toast.attachShadow({ mode: 'closed' }) // 和 IG 的樣式互不影響
+  const root = toast.attachShadow({ mode: 'closed' })
   root.innerHTML = `<style>
     .box { position: fixed; right: 24px; bottom: 24px; z-index: 2147483647; width: 340px; box-sizing: border-box;
       padding: 16px; border-radius: 12px; border: 1px solid rgb(255 255 255 / 12%); background: #18181b; color: #fafafa;
@@ -69,7 +64,6 @@ function show(lang: Lang, title: string, body: string, buttons: { label: string;
       animation: in 200ms ease-out; }
     @keyframes in { from { opacity: 0; transform: translateY(8px); } }
     @media (prefers-reduced-motion: reduce) { .box { animation: none; } }
-    /* IG 頁面上不能載入 brand.css：強調色在這裡定義一次，同 index.css 的 --primary 與深色的 --primary-text（提示框固定深色底） */
     .box { --primary: #c24700; --primary-text: #ff801f; }
     .brand { font-size: 12px; color: var(--primary-text); font-weight: 600; }
     .title { margin: 2px 0 4px; font-weight: 600; }
@@ -79,7 +73,6 @@ function show(lang: Lang, title: string, body: string, buttons: { label: string;
     button { font: inherit; font-weight: 600; padding: 6px 14px; border-radius: 8px; cursor: pointer;
       border: 1px solid rgb(255 255 255 / 15%); background: transparent; color: #fafafa; transition: filter 150ms ease-out; }
     button.primary { background: var(--primary); border-color: var(--primary); }
-    /* 只在滑鼠這類能 hover 的裝置變亮：觸控點過之後才不會一直亮著 */
     @media (hover: hover) { button:hover { filter: brightness(1.15); } }
     button:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 2px; }
   </style>
@@ -89,7 +82,7 @@ function show(lang: Lang, title: string, body: string, buttons: { label: string;
     <p class="body"></p>
     <div class="row"></div>
   </div>`
-  root.querySelector('.title')!.textContent = title // 主播帳號用 textContent 放，不經過 innerHTML
+  root.querySelector('.title')!.textContent = title
   root.querySelector('.body')!.textContent = body
   root.querySelector('.brand')!.textContent = t('app.name', {}, lang)
   root.querySelector('.box')!.setAttribute('aria-label', t('app.name', {}, lang))

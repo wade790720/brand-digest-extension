@@ -52,7 +52,7 @@ it('合作貼文：發文者是別人、主播是共同作者，也要收', () =
   ] } }
   const msg = extractPosts(collab, 'coach')!
   expect(msg.posts.map((p) => p.code)).toEqual(['COL', 'OWN'])
-  expect(msg.fullName).toBe('教練') // 名稱取主播自己發的那則，不取合作者的
+  expect(msg.fullName).toBe('教練')
 })
 
 it('互動數字：播放數取第一個有的欄位；沒有數字就不帶 stats', () => {

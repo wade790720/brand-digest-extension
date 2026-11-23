@@ -34,7 +34,7 @@ const TRIAL = 10
 
 const date = (sec: number) => (sec ? new Date(sec * 1000).toLocaleDateString(getLang()) : '')
 
-// AI 常在表格裡用 <br> 換行。只把 <br> 換成真的換行；其他 HTML 照舊當純文字顯示，不執行 AI 產生的 HTML
+// react-markdown 預設把 raw HTML 當純文字；這裡只放行 <br>（AI 常在表格裡用它換行）
 const rehypeBr = () => (tree: any) => {
   const walk = (node: any) => node.children?.forEach((c: any, i: number) => {
     if (c.type === 'raw' && /^<br\s*\/?>$/i.test(c.value.trim())) node.children[i] = { type: 'element', tagName: 'br', properties: {}, children: [] }
@@ -44,9 +44,8 @@ const rehypeBr = () => (tree: any) => {
 }
 
 
-/** 捲到文末「來源索引」的第 n 項，停下後邊框亮一下（樣式在 index.css 的 .source-flash） */
 function scrollToSource(article: HTMLElement, n: number) {
-  const heading = [...article.querySelectorAll('h2')].find((h) => /來源索引|Sources/.test(h.textContent ?? '')) // 兩種語言產生的都要認得
+  const heading = [...article.querySelectorAll('h2')].find((h) => /來源索引|Sources/.test(h.textContent ?? ''))
   const li = heading?.nextElementSibling?.querySelectorAll(':scope > li')[n - 1] as HTMLElement | undefined
   if (!li) return
   let done = false
@@ -58,7 +57,7 @@ function scrollToSource(article: HTMLElement, n: number) {
     li.classList.add('source-flash')
     setTimeout(() => li.classList.remove('source-flash'), 1500)
   }
-  // 捲動停下才亮，不然動畫在捲動途中就播完了。已經在畫面裡不會捲動，就靠計時器
+  // 已經在畫面裡就不會捲動，scrollend 不會觸發，靠計時器補
   document.addEventListener('scrollend', flash, { once: true, capture: true })
   setTimeout(flash, 1000)
   li.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -66,8 +65,6 @@ function scrollToSource(article: HTMLElement, n: number) {
 
 type Tasks = { checked: Set<string>; toggle: (key: string) => void }
 
-// 勾選狀態和原文行號用 Context 傳給下面三個元件。元件寫在外面、每次重畫都是同一個，
-// React 才會保留原本的元素：寫在 render 裡會整批重建，勾選後鍵盤焦點跳回頁面最上面
 const MdContext = createContext<{ tasks?: Tasks; lines: string[] }>({ lines: [] })
 
 // GFM 自帶的勾選框是停用的，換成自己的（見 MdLi）
@@ -102,9 +99,8 @@ function MdLink({ href, node: _node, ...props }: ComponentProps<'a'> & ExtraProp
 
 const MD_COMPONENTS: Components = { input: MdInput, li: MdLi, a: MdLink }
 
-/** tasks：可行動清單可以勾選。checked 是勾掉的項目原文 */
 function Markdown({ text, tasks }: { text: string; tasks?: Tasks }) {
-  const lines = text.split('\n') // linkCites 不改行數，所以能用行號對回原文
+  const lines = text.split('\n')
   return (
     <article className="prose prose-neutral max-w-none dark:prose-invert [:lang(en)_&]:max-w-[70ch]">
       <MdContext value={{ tasks, lines }}>
@@ -131,14 +127,12 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   const [kb, setKb] = useState<KnowledgeBase>()
   const [theories, setTheories] = useState<TheoryDoc[]>([])
   const [playbook, setPlaybook] = useState<Playbook>()
-  const [tab, setTab] = useState('kb') // kb、script、theory、posts
-  const [theoryTopic, setTheoryTopic] = useState<string | null>(null) // 理論對位分頁裡選中的主題；null＝最新的一篇
-  const [dialogTopic, setDialogTopic] = useState<string | null>(null) // null＝對話框關著
+  const [tab, setTab] = useState('kb')
+  const [theoryTopic, setTheoryTopic] = useState<string | null>(null)
+  const [dialogTopic, setDialogTopic] = useState<string | null>(null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
-  const [clubDismissed, setClubDismissed] = useState(true) // 讀到設定前先不顯示，免得閃一下
+  const [clubDismissed, setClubDismissed] = useState(true)
 
-  // 一次讀完、一起更新：只重畫一次。兩次讀取重疊時，只用最後開始的那次，舊的結果晚到也不會蓋掉新的
-  // 換主播時焦點移到標題：螢幕閱讀器使用者才知道右邊換了內容（每位主播的頁面都重新掛載）
   const titleRef = useRef<HTMLHeadingElement>(null)
   useEffect(() => titleRef.current?.focus(), [])
   const loadId = useRef(0)
@@ -165,11 +159,9 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   const todo = posts.length - done
   const mine = run?.creator === creator.name
   const busyElsewhere = !!run && !mine
-  // 還沒有知識庫又有很多則：建議先試幾則，幾分鐘內看到成果，再決定要不要全部做
   const trial = !kb && todo > TRIAL
 
   const actions = kb ? taskKeys(kb.markdown) : []
-  // 萃取完成、還沒拆解腳本的貼文（拆解用萃取時存下的逐字稿，不用重新轉錄）
   const scriptTodo = posts.filter((p) => p.status === 'done' && !p.script && (p.transcript || p.caption)).length
   const startScript = () => (setTab('script'), onScript())
   const actionsDone = actions.filter((k) => checked.has(k)).length
@@ -180,11 +172,9 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
     saveChecks(creator.name, [...next])
   }
 
-  // 萃取中：這次要處理的貼文，給拆解畫面（理論對位、腳本拆解沒有 codes，照舊只顯示進度）
   const byCode = new Map(posts.map((p) => [p.code, p]))
   const runPosts = mine && run!.progress.codes ? run!.progress.codes.flatMap((c) => byCode.get(c) ?? []) : null
 
-  // 重播：用存好的萃取結果，依處理順序一則一則放進拆解畫面，不呼叫 AI。萃取一開始就讓位給真的進度
   const [replay, setReplay] = useState<{ step: number; speed: 1 | 2 } | null>(null)
   const saved = replay ? posts.filter((p) => p.status === 'done' && p.digest) : []
   const tick = Math.min(800, Math.max(120, 15_000 / (saved.length || 1))) // ponytail: 1× 約 15 秒播完，每則 0.12–0.8 秒
@@ -193,21 +183,17 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
     const id = setTimeout(() => setReplay((r) => r && { ...r, step: r.step + 1 }), tick / replay.speed)
     return () => clearTimeout(id)
   }, [replay, saved.length, tick])
-  if (mine && replay) setReplay(null) // 真的萃取開始就關掉重播，結束後不會再跳出「重播完畢」
-  // 還沒放到的當作未處理；放過的補上假的完成時間，拆解畫面就能照常算剩餘時間
+  if (mine && replay) setReplay(null)
   const replayPosts = replay && !mine
     ? saved.map((p, i) => (i < replay.step ? { ...p, processedAt: ((i + 1) * tick) / replay.speed } : { ...p, status: 'new' as const }))
     : null
-  // 拆解畫面是主角：狀態卡只留一行狀態和停止，分頁先收起來
   const stage = !!runPosts || !!replayPosts
   const replaying = !!replay && replay.step < saved.length
 
-  // 理論對位：一個主題一篇，全部收在同一個分頁裡用選單切換，分頁列不會因為主題變多而變長
   const sortedTheories = [...theories].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
   const theory = sortedTheories.find((d) => d.topic === theoryTopic) ?? sortedTheories[0]
   const topicLabel = (topic: string) => (topic === ALL ? t('theory.allLabel') : topic)
 
-  // 知識庫上方的俱樂部提示：按關閉就存起來，之後所有主播都不再出現
   async function dismissClub() {
     setClubDismissed(true)
     await saveSettings({ ...(await getSettings()), clubDismissed: true })
@@ -243,7 +229,6 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {/* 處理中不能刪：會刪到正在寫入的資料 */}
           <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={onDelete} disabled={mine}>
             <Trash2 /> {t('common.delete')}
           </Button>

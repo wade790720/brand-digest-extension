@@ -75,7 +75,6 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     }
   }
 
-  // 語言一選就生效並存起來，不用等按「儲存」：使用者要立刻看到換好的畫面
   async function changeLang(lang: LangSetting) {
     setS({ ...s, lang })
     setLang(resolveLang(lang, browserLang()))
@@ -150,7 +149,6 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <SelectTrigger id="model" className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {options.map((m) => (
-                // 選項文字撐滿整列，標籤才能靠右
                 <SelectItem key={m} value={m} className="*:[span]:last:flex-1">
                   {m} <span className="ml-auto"><StatusBadge st={status[`${s.provider}:${m}`]} /></span>
                 </SelectItem>
@@ -183,7 +181,6 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
         <Separator />
 
-        {/* 百寶袋俱樂部：工具免費，給想學更多的人一個去處。低調，不搶主要操作 */}
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
           <span>{t('club.pitch')}</span>
           <Button variant="outline" size="sm" asChild>

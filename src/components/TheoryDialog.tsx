@@ -12,10 +12,8 @@ import { getTheories, saveTheory } from '@/lib/store'
 import { proposeSkeleton, skeletonToText, textToSkeleton } from '@/lib/theory'
 import type { Creator, Theory } from '@/types'
 
-// 不填主題：讓 AI 依全部貼文挑理論
 export const ALL = '全部內容'
 
-/** 產生理論對位版：①輸入主題 → ②AI 提骨架、使用者確認或修改 → ③交給 onStart 在背景產生 */
 export function TheoryDialog({ creator, open, initialTopic, onOpenChange, onStart }: {
   creator: Creator
   open: boolean
@@ -24,7 +22,7 @@ export function TheoryDialog({ creator, open, initialTopic, onOpenChange, onStar
   onStart: (topic: string, skeleton: Theory[]) => void
 }) {
   const [topic, setTopic] = useState('')
-  const [text, setText] = useState<string | null>(null) // null＝還在第一步
+  const [text, setText] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -39,7 +37,6 @@ export function TheoryDialog({ creator, open, initialTopic, onOpenChange, onStar
   async function propose(fresh: boolean) {
     const t = topic.trim() || ALL
     setErr('')
-    // 這個主題做過，先拿上次確認的骨架，除非要求重提
     const old = fresh ? undefined : (await getTheories(creator.name))[t]
     if (old) {
       setText(skeletonToText(old.skeleton))

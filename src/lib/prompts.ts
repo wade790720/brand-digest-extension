@@ -1,8 +1,5 @@
-// 提示詞移植自 brand-digest（Python 版）的 pipeline/digest.py 與 pipeline/aggregate.py。
-// JSON 欄位名用英文（程式好處理）。說明文字維持中文，輸出語言和章節標題跟著介面語言（lang）。
 import { t, type Lang } from '@/lib/i18n'
 
-/** 開場（hook）類型。資料裡固定存中文原字，統計才不會因為語言不同而分散 */
 export const HOOK_TYPES = ['提問', '反常識', '數字清單', '痛點', '故事開場', '身分喊話', '結果先行', '爭議觀點', '其他']
 
 export const digestSystem = (lang: Lang) => `你是擅長從社群內容萃取乾貨的知識整理專家。
@@ -63,7 +60,6 @@ export const aggregateUser = (creator: string, count: number, digestsJson: strin
 【各篇萃取結果】
 ${digestsJson}`
 
-/** 內容太多、要分批整理時，把幾份分批結果合成一份。 */
 export const mergeUser = (creator: string, parts: string[], lang: Lang) =>
   `以下是「${creator}」的知識庫，因為內容太多分成 ${parts.length} 批整理。請把它們合併成一份，
 相同概念合併成一條、保留所有 [編號]，${sections(lang)}
