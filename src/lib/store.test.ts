@@ -50,3 +50,9 @@ it('備份裡的主播缺少貼文清單：說明不是正確的備份檔，什�
   expect(err.message).toContain('備份檔')
   expect(mem.has('kb:coach')).toBe(false)
 })
+
+it('備份裡的貼文格式不對（缺狀態）：一樣拒絕，不寫入會讓貼文分頁壞掉的資料', async () => {
+  const err = await importAll({ app: 'brand-digest', data: { 'post:A': { code: 'A', caption: 'x' } } }).catch((e) => e)
+  expect(err.message).toContain('備份檔')
+  expect(mem.has('post:A')).toBe(false)
+})

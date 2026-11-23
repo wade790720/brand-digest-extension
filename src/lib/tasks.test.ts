@@ -29,3 +29,16 @@ it('第一節是清單時只拿掉儀表板顯示的那一點，其他點和標�
   expect(dropTeachLine(md)).toBe('_n_\n\n## 教什麼\n\n- 第二點\n- 第三點\n\n## 方法\n- A')
   expect(teachLine('## 教什麼\n\n1. 編號的第一點')).toBe('編號的第一點')
 })
+
+it('第一點底下的子項目和續行跟著第一點一起拿掉，不會變成沒有上層的孤兒', () => {
+  const nested = '## 教什麼\n\n- 第一點\n  - 子項目一\n  - 子項目二\n- 第二點\n\n## 方法'
+  expect(dropTeachLine(nested)).toBe('## 教什麼\n\n- 第二點\n\n## 方法')
+  const lazy = '## 教什麼\n\n- 第一點很長\n接著寫的續行\n- 第二點\n\n## 方法'
+  expect(dropTeachLine(lazy)).toBe('## 教什麼\n\n- 第二點\n\n## 方法')
+})
+
+it('第一節是表格：儀表板不顯示那一句，知識庫照原樣', () => {
+  const table = '## 教什麼\n\n| 主題 | 說明 |\n|---|---|\n| 時間 | 早上做要事 |\n\n## 方法'
+  expect(teachLine(table)).toBe('')
+  expect(dropTeachLine(table)).toBe(table)
+})
