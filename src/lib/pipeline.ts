@@ -4,12 +4,24 @@ import { HOOK_TYPES, aggregateSystem, aggregateUser, digestSystem, digestUser, m
 import { getCache, getPost, getPosts, getSettings, saveCache, saveKnowledgeBase, updatePost } from '@/lib/store'
 import type { Creator, Digest, Post, Settings } from '@/types'
 
+/** 萃取一則貼文的步驟；kb 是最後整合知識庫 */
+export type Step = 'download' | 'transcribe' | 'extract' | 'kb'
+
+/** 執行紀錄的一筆。warn 是自動等待或換模型，error 是這則失敗 */
+export interface RunEvent {
+  level: 'info' | 'warn' | 'error'
+  text: string
+  code?: string
+}
+
 export interface Progress {
   done: number
   total: number
   status: string
   codes?: string[]
   current?: string
+  step?: Step
+  event?: RunEvent
 }
 
 const PAUSE_MIN = 3
@@ -70,7 +82,8 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
   const posts = await getPosts(creator)
   const todo = posts.filter((p) => p.status !== 'done').slice(0, limit)
   const codes = todo.map((p) => p.code)
-  const report = (done: number, status: string) => onProgress({ done, total: todo.length, status, codes, current: codes[done] })
+  const report = (done: number, status: string, step?: Step, event?: RunEvent) =>
+    onProgress({ done, total: todo.length, status, codes, current: codes[done], step, event })
   let fatal: LlmError | undefined
 
   for (const [i, code] of codes.entries()) {
@@ -79,24 +92,26 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
     if (!p) continue
     const label = t('pipe.label', { i: i + 1, n: todo.length })
     const step = (msg: string) => t('pipe.step', { label, msg })
+    // 自動等待和換模型的訊息除了顯示在狀態列，也記一筆警告，停下時看得到之前發生了什麼
+    const waiting = (s: Step) => (m: string) => report(i, step(m), s, { level: 'warn', text: m, code })
     let downloaded = false
     try {
       await saveThumb(p, signal)
       if (p.transcript === undefined) {
         if (p.audioUrl || p.videoUrl) {
-          report(i, step(t('pipe.download')))
+          report(i, step(t('pipe.download')), 'download')
           const audio = await download(p, signal)
           downloaded = true
-          report(i, step(t('pipe.transcribe')))
-          p.transcript = await transcribe(settings, audio, (m) => report(i, step(m)), signal)
+          report(i, step(t('pipe.transcribe')), 'transcribe')
+          p.transcript = await transcribe(settings, audio, waiting('transcribe'), signal)
         } else {
           p.transcript = ''
         }
         await updatePost(code, { transcript: p.transcript, thumb: p.thumb })
       }
-      report(i, step(t('pipe.extract')))
+      report(i, step(t('pipe.extract')), 'extract')
       const json = parseJson(await generate(settings, digestSystem(lang), digestUser(p.caption, p.transcript), {
-        json: true, onWait: (m) => report(i, step(m)), signal,
+        json: true, onWait: waiting('extract'), signal,
       }))
       // 不是物件（例如包在陣列裡）也算格式壞掉：這則算失敗，下次重做，不存成空白的完成
       if (!json || typeof json !== 'object' || Array.isArray(json))
@@ -116,13 +131,14 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
       p.error = e instanceof Error ? e.message : String(e)
     }
     await updatePost(code, { thumb: p.thumb, transcript: p.transcript, digest: p.digest, status: p.status, processedAt: p.processedAt, error: p.error })
-    report(i + 1, step(p.status === 'done' ? t('common.done') : t('pipe.failed', { error: p.error ?? '' })))
+    report(i + 1, step(p.status === 'done' ? t('common.done') : t('pipe.failed', { error: p.error ?? '' })), undefined,
+      p.status === 'done' ? { level: 'info', text: t('log.done', { topic: p.digest!.topic }), code } : { level: 'error', text: p.error ?? '', code })
     if (downloaded && i < todo.length - 1)
       await sleep((PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN)) * 1000, signal)
   }
 
   if (signal.aborted) return
-  const kbProgress = (p: Progress) => onProgress({ ...p, codes })
+  const kbProgress = (p: Progress) => onProgress({ ...p, codes, step: 'kb' })
   if (fatal) {
     await buildKnowledgeBase(creator, settings, kbProgress, signal).catch(() => {})
     throw fatal

@@ -2,13 +2,14 @@ import { Download, ExternalLink, FileText, History, Loader2, MoreHorizontal, Pla
 import { createContext, use, useCallback, useEffect, useRef, useState, type ComponentProps } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { Run } from '@/App'
+import type { Run, Stopped } from '@/App'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ALL, TheoryDialog } from '@/components/TheoryDialog'
 import { DecodePanel } from '@/components/DecodePanel'
 import { KbDashboard } from '@/components/KbDashboard'
+import { LogToggle, StepRail, StopDetail } from '@/components/RunLog'
 import { Card, CardContent } from '@/components/ui/card'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -112,10 +113,10 @@ function Markdown({ text, tasks }: { text: string; tasks?: Tasks }) {
   )
 }
 
-export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onStart, onTheory, onScript, onStop }: {
+export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart, onTheory, onScript, onStop }: {
   creator: Creator
   run: Run | null
-  stopReason?: string
+  stopped?: Stopped
   onRetry: () => void
   onDelete: () => void
   onStart: (limit?: number) => void
@@ -237,15 +238,32 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
 
       {stage ? (
         <Card>
-          <CardContent className="flex items-center gap-3">
-            {(runPosts || replaying) && <Loader2 className="size-4 shrink-0 text-muted-foreground motion-safe:animate-spin" />}
-            <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-              {runPosts ? run!.progress.status : replaying ? t('replay.status', { i: replay!.step + 1, n: saved.length }) : t('replay.done')}
-            </p>
-            {runPosts ? (
-              <Button variant="outline" onClick={onStop}><Square /> {t('cv.stop')}</Button>
-            ) : (
-              <Button variant="outline" onClick={() => setReplay(null)}><X /> {t('replay.close')}</Button>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-3">
+              {runPosts ? (
+                <StepRail progress={run!.progress} />
+              ) : (
+                <>
+                  {replaying && <Loader2 className="size-4 shrink-0 text-muted-foreground motion-safe:animate-spin" />}
+                  <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                    {replaying ? t('replay.status', { i: replay!.step + 1, n: saved.length }) : t('replay.done')}
+                  </p>
+                </>
+              )}
+              {runPosts ? (
+                <Button variant="outline" onClick={onStop}><Square /> {t('cv.stop')}</Button>
+              ) : (
+                <Button variant="outline" onClick={() => setReplay(null)}><X /> {t('replay.close')}</Button>
+              )}
+            </div>
+            {runPosts && (
+              <>
+                <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-3.5 shrink-0 motion-safe:animate-spin" aria-hidden />
+                  <span className="truncate">{run!.progress.status}</span>
+                </p>
+                {run!.log.length > 0 && <LogToggle log={run!.log} startedAt={run!.startedAt} />}
+              </>
             )}
           </CardContent>
         </Card>
@@ -316,15 +334,7 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
         </DecodePanel>
       )}
 
-      {stopReason && !mine && (
-        <Alert variant="destructive">
-          <AlertTitle>{t('cv.stopped')}</AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-            <span>{stopReason}</span>
-            <Button size="sm" variant="outline" onClick={onRetry} disabled={!!run}><Play /> {t('common.continue')}</Button>
-          </AlertDescription>
-        </Alert>
-      )}
+      {stopped && !mine && <StopDetail stopped={stopped} onRetry={onRetry} busy={!!run} />}
 
       {failed.length > 0 && !mine && (
         <Alert variant="destructive">

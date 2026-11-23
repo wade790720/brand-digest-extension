@@ -12,7 +12,7 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Separator } from '@/components/ui/separator'
 import { LlmError } from '@/lib/llm'
-import { processCreator, type Progress } from '@/lib/pipeline'
+import { processCreator, type Progress, type RunEvent, type Step } from '@/lib/pipeline'
 import { cn } from '@/lib/utils'
 import { browserLang, resolveLang, setLang, t } from '@/lib/i18n'
 import { deleteCreator, getCreators, getSettings, onStoreChange } from '@/lib/store'
@@ -23,10 +23,24 @@ import type { Creator } from '@/types'
 
 type Task = (c: Creator, signal: AbortSignal, onProgress: (p: Progress) => void) => Promise<void>
 
+export interface LogEntry extends RunEvent {
+  at: number
+}
+
 export interface Run {
   creator: string
   progress: Progress
   startedAt: number
+  log: LogEntry[]
+}
+
+/** 上次為什麼停下、停在哪裡，連同這次的執行紀錄 */
+export interface Stopped {
+  creator: string
+  reason: string
+  startedAt: number
+  log: LogEntry[]
+  where?: { step?: Step; index?: number; code?: string }
 }
 
 export default function App() {
@@ -37,7 +51,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toDelete, setToDelete] = useState<Creator | null>(null)
   const [run, setRun] = useState<Run | null>(null)
-  const [stopped, setStopped] = useState<{ creator: string; reason: string } | null>(null)
+  const [stopped, setStopped] = useState<Stopped | null>(null)
   const abort = useRef<AbortController | null>(null)
   const lastTask = useRef<{ task: Task; doneMsg: string } | null>(null)
 
@@ -67,15 +81,24 @@ export default function App() {
     abort.current = ctrl
     setStopped(null)
     const startedAt = Date.now()
-    setRun({ creator: creator.name, progress: { done: 0, total: 0, status: t('app.preparing') }, startedAt })
+    // 紀錄和最後一次進度放在這裡累積：停下時直接讀，不受 state 更新時機影響
+    let log: LogEntry[] = []
+    let last: Progress = { done: 0, total: 0, status: t('app.preparing') }
+    setRun({ creator: creator.name, progress: last, startedAt, log })
     try {
-      await task(creator, ctrl.signal, (progress) => setRun({ creator: creator.name, progress, startedAt }))
+      await task(creator, ctrl.signal, (progress) => {
+        if (progress.event) log = [...log, { ...progress.event, at: Date.now() }]
+        last = progress
+        setRun({ creator: creator.name, progress, startedAt, log })
+      })
       if (!ctrl.signal.aborted) toast.success(doneMsg)
     } catch (e) {
       if (ctrl.signal.aborted) return
       const msg = e instanceof Error ? e.message : String(e)
       toast.error(msg, { duration: 10000 })
-      setStopped({ creator: creator.name, reason: msg })
+      log = [...log, { level: 'error', text: msg, code: last.current, at: Date.now() }]
+      const where = last.step && { step: last.step, ...(last.current && { index: last.done + 1, code: last.current }) }
+      setStopped({ creator: creator.name, reason: msg, startedAt, log, ...(where && { where }) })
       if (e instanceof LlmError && (e.kind === 'auth' || e.kind === 'model')) setSettingsOpen(true)
     } finally {
       abort.current = null
@@ -145,7 +168,7 @@ export default function App() {
             key={current.name}
             creator={current}
             run={run}
-            stopReason={stopped?.creator === current.name ? stopped.reason : undefined}
+            stopped={stopped?.creator === current.name ? stopped : undefined}
             onDelete={() => setToDelete(current)}
             onRetry={() => lastTask.current && runTask(current, lastTask.current.task, lastTask.current.doneMsg)}
             onStart={(limit) => runTask(current, (c, signal, onProgress) => processCreator(c, signal, onProgress, limit),
