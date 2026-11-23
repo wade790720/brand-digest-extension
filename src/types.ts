@@ -53,6 +53,7 @@ export interface Creator {
   name: string
   fullName: string
   codes: string[]
+  avatar?: string
 }
 
 export interface KnowledgeBase {
@@ -94,5 +95,6 @@ export interface CollectMessage {
   type: 'collect'
   creator: string
   fullName: string
+  avatarUrl?: string
   posts: Omit<Post, 'status' | 'collectedAt'>[]
 }

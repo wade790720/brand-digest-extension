@@ -1,36 +1,22 @@
 // MAIN world、document_start：要在 IG 的程式拿到 XHR/fetch 之前換掉它們。
-import { extractPosts, profileOf } from '@/lib/parse'
+import { profileOf } from '@/lib/parse'
+import { createCollector } from './collector'
 
 const SOURCE = 'brand-digest'
 
-function inspect(url: string, text: string) {
-  if (!url.includes('graphql') || !text.includes('"code"')) return
-  const creator = profileOf(location.pathname)
-  if (!creator) return
-  for (const json of parseAll(text)) {
-    const msg = extractPosts(json, creator)
-    if (msg) window.postMessage({ source: SOURCE, msg }, location.origin)
-  }
-}
+const collect = createCollector((msg) => window.postMessage({ source: SOURCE, msg }, location.origin))
 
-/** 一般 JSON 直接解析；串流格式（好幾段 JSON 一行一段）就逐行解析。解析不了的略過，不能影響 IG 頁面本身 */
-function parseAll(text: string): unknown[] {
-  const tryParse = (t: string) => {
-    try {
-      return [JSON.parse(t)]
-    } catch {
-      return []
-    }
-  }
-  const whole = tryParse(text.replace(/^for \(;;\);/, ''))
-  return whole.length ? whole : text.split('\n').flatMap((line) => (line.includes('"code"') ? tryParse(line) : []))
+function inspect(url: string, text: string) {
+  if (!url.includes('graphql')) return
+  const creator = profileOf(location.pathname)
+  if (creator) collect(text, creator)
 }
 
 // 打開主頁時，最上面一批貼文常直接寫在網頁的 <script type="application/json"> 裡，不經過 graphql 請求
 document.addEventListener('DOMContentLoaded', () => {
   for (const s of document.querySelectorAll('script[type="application/json"]')) {
     const text = s.textContent ?? ''
-    if (text.includes('media_type')) inspect('embedded:graphql', text)
+    if (text.includes('media_type') || text.includes('profile_pic_url')) inspect('embedded:graphql', text)
   }
 })
 

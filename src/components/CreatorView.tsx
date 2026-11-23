@@ -1,9 +1,12 @@
-import { Download, ExternalLink, FileText, History, Loader2, MoreHorizontal, Play, Plus, RefreshCw, RotateCcw, Square, Trash2, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpRightFromSquare, FileText, ClockArrowRotateLeft, ArrowsRotateRight, Ellipsis, Play, Plus, ArrowRotateLeft, Stop, TrashBin, Xmark, Bulb, Compass, Link, ListCheck, TriangleExclamation } from '@gravity-ui/icons'
 import { createContext, use, useCallback, useEffect, useRef, useState, type ComponentProps } from 'react'
+import { createPortal } from 'react-dom'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Run, Stopped } from '@/App'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Avatar } from '@/components/CreatorSwitcher'
+import { CreatorStats } from '@/components/CreatorStats'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ALL, TheoryDialog } from '@/components/TheoryDialog'
@@ -13,22 +16,24 @@ import { LogToggle, StepRail, StopDetail } from '@/components/RunLog'
 import { Card, CardContent } from '@/components/ui/card'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { deleteTheory, getChecks, getKnowledgeBase, getPlaybook, getPosts, getSettings, getTheories, onStoreChange, saveChecks, saveSettings } from '@/lib/store'
 import { linkCites } from '@/lib/cites'
 import { getLang, t, type Key } from '@/lib/i18n'
+import { rehypeSections, type Tone } from '@/lib/sections'
 import { dropTeachLine, taskKey, taskKeys } from '@/lib/tasks'
-import { download } from '@/lib/utils'
+import { cn, download } from '@/lib/utils'
 import type { Creator, KnowledgeBase, Playbook, Post, Theory, TheoryDoc } from '@/types'
 
-const STATUS: Record<Post['status'], { label: Key; variant: 'secondary' | 'default' | 'destructive' }> = {
-  new: { label: 'status.new', variant: 'secondary' },
-  done: { label: 'status.done', variant: 'default' },
-  error: { label: 'status.error', variant: 'destructive' },
+const STATUS: Record<Post['status'], { label: Key; dot: string; text: string }> = {
+  new: { label: 'status.new', dot: 'bg-muted-foreground/60', text: 'text-muted-foreground' },
+  done: { label: 'status.done', dot: 'bg-[var(--tone-action)]', text: 'text-[var(--tone-action-text)]' },
+  error: { label: 'status.error', dot: 'bg-destructive', text: 'text-destructive' },
 }
+
+const TONE_ICON: Record<Tone, typeof Bulb> = { key: Bulb, method: Compass, action: ListCheck, caution: TriangleExclamation, source: Link }
 
 
 const TRIAL = 10
@@ -93,19 +98,41 @@ function MdLink({ href, node: _node, ...props }: ComponentProps<'a'> & ExtraProp
   const cite = href?.match(/^#src-(\d+)$/)
   if (!cite) return <a href={href} {...props} target="_blank" rel="noreferrer" />
   return (
-    <a href={href} {...props} className="no-underline" title={t('cv.citeTitle', { n: cite[1] })}
-      onClick={(e) => (e.preventDefault(), scrollToSource(e.currentTarget.closest('article')!, Number(cite[1])))} />
+    <a href={href} {...props} className="md-cite" title={t('cv.citeTitle', { n: cite[1] })} aria-label={t('cv.citeTitle', { n: cite[1] })}
+      onClick={(e) => (e.preventDefault(), scrollToSource(e.currentTarget.closest('article')!, Number(cite[1])))}>{cite[1]}</a>
   )
 }
 
-const MD_COMPONENTS: Components = { input: MdInput, li: MdLi, a: MdLink }
+function MdH2({ node, children, ...props }: ComponentProps<'h2'> & ExtraProps) {
+  const { tasks, lines } = use(MdContext)
+  const tone = (node?.properties?.dataTone ?? 'method') as Tone
+  const Icon = TONE_ICON[tone]
+  const keys = tone === 'action' && tasks ? taskKeys(lines.join('\n')) : []
+  const checked = keys.filter((k) => tasks!.checked.has(k)).length
+  return (
+    <h2 {...props}>
+      <span className="md-tone-icon" aria-hidden><Icon className="size-4" /></span>
+      <span className="min-w-0 flex-1">{children}</span>
+      {keys.length > 0 && (
+        <span className="flex shrink-0 items-center gap-2 text-xs font-medium tabular-nums">
+          <span className="h-1 w-16 overflow-hidden rounded-full bg-row-active max-sm:hidden" aria-hidden>
+            <span className="block h-full rounded-full bg-[var(--tone-action)]" style={{ width: `${Math.round((checked / keys.length) * 100)}%` }} />
+          </span>
+          {checked}/{keys.length}
+        </span>
+      )}
+    </h2>
+  )
+}
+
+const MD_COMPONENTS: Components = { input: MdInput, li: MdLi, a: MdLink, h2: MdH2 }
 
 function Markdown({ text, tasks }: { text: string; tasks?: Tasks }) {
   const lines = text.split('\n')
   return (
-    <article className="prose prose-neutral max-w-none dark:prose-invert [:lang(en)_&]:max-w-[70ch]">
+    <article className="md-doc prose prose-neutral max-w-none dark:prose-invert">
       <MdContext value={{ tasks, lines }}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr]} components={MD_COMPONENTS}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr, rehypeSections]} components={MD_COMPONENTS}>
           {linkCites(text)}
         </ReactMarkdown>
       </MdContext>
@@ -113,8 +140,9 @@ function Markdown({ text, tasks }: { text: string; tasks?: Tasks }) {
   )
 }
 
-export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart, onTheory, onScript, onStop }: {
+export function CreatorView({ creator, tabsSlot, run, stopped, onRetry, onDelete, onStart, onTheory, onScript, onStop }: {
   creator: Creator
+  tabsSlot: HTMLElement | null
   run: Run | null
   stopped?: Stopped
   onRetry: () => void
@@ -166,6 +194,7 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
   const scriptTodo = posts.filter((p) => p.status === 'done' && !p.script && (p.transcript || p.caption)).length
   const startScript = () => (setTab('script'), onScript())
   const actionsDone = actions.filter((k) => checked.has(k)).length
+  const points = posts.reduce((n, p) => n + (p.status === 'done' && p.digest ? p.digest.points.length : 0), 0)
   function toggle(key: string) {
     const next = new Set(checked)
     if (!next.delete(key)) next.add(key)
@@ -207,32 +236,35 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-8">
-      <header className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 ref={titleRef} tabIndex={-1} className="text-2xl font-semibold">{creator.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {creator.fullName && `${creator.fullName} · `}
-            <a className="inline-flex items-center gap-1 underline-offset-4 hover:underline"
-              href={`https://www.instagram.com/${creator.name}/`} target="_blank" rel="noreferrer">
-              instagram.com/{creator.name} <ExternalLink className="size-3" />
-            </a>
-          </p>
+    <div className="mx-auto max-w-4xl space-y-6 px-8 py-8 max-md:px-4">
+      <header className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <Avatar name={creator.name} src={creator.avatar} className="size-14 text-xl max-sm:size-11" />
+          <div className="min-w-0">
+            <h1 ref={titleRef} tabIndex={-1} title={creator.name} className="truncate text-2xl font-semibold">{creator.name}</h1>
+            <p className="truncate text-sm text-muted-foreground">
+              {creator.fullName && `${creator.fullName} · `}
+              <a className="underline-offset-4 hover:underline" title={`instagram.com/${creator.name}`}
+                href={`https://www.instagram.com/${creator.name}/`} target="_blank" rel="noreferrer">
+                instagram.com/{creator.name} <ArrowUpRightFromSquare className="inline size-3 align-[-0.1em]" />
+              </a>
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={t('app.moreFor', { name: creator.name })}><MoreHorizontal /></Button>
+              <Button variant="ghost" size="icon" aria-label={t('app.moreFor', { name: creator.name })} className="text-muted-foreground hover:text-foreground"><Ellipsis /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem disabled={!!run || done === 0} onSelect={() => setReplay({ step: 0, speed: 1 })}>
-                <History /> {t('replay.menu')}
+                <ClockArrowRotateLeft /> {t('replay.menu')}
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" disabled={mine} onSelect={onDelete}>
+                <TrashBin /> {t('common.delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={onDelete} disabled={mine}>
-            <Trash2 /> {t('common.delete')}
-          </Button>
         </div>
       </header>
 
@@ -244,44 +276,29 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
                 <StepRail progress={run!.progress} />
               ) : (
                 <>
-                  {replaying && <Loader2 className="size-4 shrink-0 text-muted-foreground motion-safe:animate-spin" />}
+                  {replaying && <ArrowsRotateRight className="size-4 shrink-0 text-muted-foreground motion-safe:animate-spin" />}
                   <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                     {replaying ? t('replay.status', { i: replay!.step + 1, n: saved.length }) : t('replay.done')}
                   </p>
                 </>
               )}
               {runPosts ? (
-                <Button variant="outline" onClick={onStop}><Square /> {t('cv.stop')}</Button>
+                <Button variant="outline" onClick={onStop}><Stop /> {t('cv.stop')}</Button>
               ) : (
-                <Button variant="outline" onClick={() => setReplay(null)}><X /> {t('replay.close')}</Button>
+                <Button variant="outline" onClick={() => setReplay(null)}><Xmark /> {t('replay.close')}</Button>
               )}
             </div>
-            {runPosts && (
-              <>
-                <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="size-3.5 shrink-0 motion-safe:animate-spin" aria-hidden />
-                  <span className="truncate">{run!.progress.status}</span>
-                </p>
-                {run!.log.length > 0 && <LogToggle log={run!.log} startedAt={run!.startedAt} />}
-              </>
-            )}
+            {runPosts && run!.log.length > 0 && <LogToggle log={run!.log} startedAt={run!.startedAt} />}
           </CardContent>
         </Card>
       ) : (
       <Card>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant="outline">{t('cv.collected', { n: posts.length })}</Badge>
-            <Badge variant="outline">{t('cv.doneCount', { n: done })}</Badge>
-            {todo > 0 && <Badge variant="secondary">{t('cv.pending', { n: todo })}</Badge>}
-            {actions.length > 0 && (
-              <Badge variant={actionsDone === actions.length ? 'default' : 'outline'} title={t('cv.actionsTitle')}>
-                {t('cv.actions', { done: actionsDone, total: actions.length })}
-              </Badge>
-            )}
-            <div className="ml-auto flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
+            <CreatorStats collected={posts.length} done={done} points={points} actions={{ done: actionsDone, total: actions.length }} />
+            <div className="flex flex-wrap gap-2">
               {mine ? (
-                <Button variant="outline" onClick={onStop}><Square /> {t('cv.stop')}</Button>
+                <Button variant="outline" onClick={onStop}><Stop /> {t('cv.stop')}</Button>
               ) : trial ? (
                 <>
                   <Button variant="outline" onClick={() => onStart()} disabled={busyElsewhere}>{t('cv.extractAll', { n: todo })}</Button>
@@ -297,15 +314,7 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
             </div>
           </div>
           {busyElsewhere && <p className="text-sm text-muted-foreground">{t('cv.busyElsewhere', { name: run!.creator })}</p>}
-          {mine && (
-            <div className="space-y-2" aria-live="polite">
-              <Progress value={run!.progress.total ? (run!.progress.done / run!.progress.total) * 100 : 0} />
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" /> {run!.progress.status}
-              </p>
-              <p className="text-xs text-muted-foreground">{t('cv.keepTab')}</p>
-            </div>
-          )}
+          {mine && <p className="text-xs text-muted-foreground">{t('cv.keepTab')}</p>}
           {!mine && posts.length > 0 && (
             <p className="text-xs text-muted-foreground">{t('cv.collectMore')}</p>
           )}
@@ -321,14 +330,15 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
         <DecodePanel handle={creator.name} posts={replayPosts} current={saved[replay.step]?.code} startedAt={0} live={false}>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{t('replay.label')}</Badge>
-            <div role="group" aria-label={t('replay.speed')} className="flex rounded-md border p-0.5">
+            <div role="group" aria-label={t('replay.speed')} className="flex h-9 shrink-0 items-center gap-0.5 rounded-[calc(var(--radius)-2px)] border border-line-strong bg-card p-0.5 shadow-[var(--shadow-xs)]">
               {([1, 2] as const).map((s) => (
-                <Button key={s} size="xs" variant={replay.speed === s ? 'secondary' : 'ghost'} aria-pressed={replay.speed === s}
+                <Button key={s} size="icon-sm" variant="ghost" aria-pressed={replay.speed === s}
+                  className={cn('!size-[30px] rounded-[5px] text-xs text-muted-foreground hover:text-foreground', replay.speed === s && 'bg-row-active text-foreground hover:!bg-row-active')}
                   onClick={() => setReplay({ ...replay, speed: s })}>{s}×</Button>
               ))}
             </div>
             {replay.step >= saved.length && (
-              <Button size="sm" variant="ghost" onClick={() => setReplay({ ...replay, step: 0 })}><RotateCcw /> {t('replay.again')}</Button>
+              <Button size="sm" variant="ghost" onClick={() => setReplay({ ...replay, step: 0 })}><ArrowRotateLeft /> {t('replay.again')}</Button>
             )}
           </div>
         </DecodePanel>
@@ -345,24 +355,25 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
 
       {!stage && (
       <Tabs value={tab} onValueChange={setTab}>
-        <div className="flex flex-wrap items-center gap-2">
-          <TabsList className="h-auto flex-wrap">
+        {tabsSlot && createPortal(
+          <TabsList variant="line">
             <TabsTrigger value="kb">{t('cv.tabKb')}</TabsTrigger>
             <TabsTrigger value="script">{t('cv.tabScript')}</TabsTrigger>
-            <TabsTrigger value="theory">{theories.length > 1 ? t('cv.tabTheoryN', { n: theories.length }) : t('cv.tabTheory')}</TabsTrigger>
-            <TabsTrigger value="posts">{t('cv.tabPosts', { n: posts.length })}</TabsTrigger>
-          </TabsList>
-        </div>
+            <TabsTrigger value="theory">{t('cv.tabTheory')}{theories.length > 1 && <span className="text-xs tabular-nums text-muted-foreground">{theories.length}</span>}</TabsTrigger>
+            <TabsTrigger value="posts">{t('cv.tabPosts')}<span className="text-xs tabular-nums text-muted-foreground">{posts.length}</span></TabsTrigger>
+          </TabsList>,
+          tabsSlot,
+        )}
 
-        <TabsContent value="script" className="space-y-4 pt-4">
+        <TabsContent value="script" className="space-y-4">
           {playbook ? (
             <>
               <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="outline" size="sm" disabled={!!run} onClick={startScript}>
-                  <RefreshCw /> {scriptTodo ? t('cv.scriptUpdate', { n: scriptTodo }) : t('cv.regroup')}
+                  <ArrowsRotateRight /> {scriptTodo ? t('cv.scriptUpdate', { n: scriptTodo }) : t('cv.regroup')}
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => download(t('cv.scriptFile', { name: creator.name }), playbook.markdown)}>
-                  <Download /> {t('common.download')}
+                  <ArrowDownToLine /> {t('common.download')}
                 </Button>
               </div>
               <Markdown text={playbook.markdown} tasks={{ checked, toggle }} />
@@ -383,15 +394,15 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
           )}
         </TabsContent>
 
-        <TabsContent value="kb" className="space-y-4 pt-4">
+        <TabsContent value="kb" className="space-y-4">
           {kb ? (
             <>
               <div className="flex justify-end">
                 <Button variant="outline" size="sm" onClick={() => download(t('cv.kbFile', { name: creator.name }), kb.markdown)}>
-                  <Download /> {t('common.download')}
+                  <ArrowDownToLine /> {t('common.download')}
                 </Button>
               </div>
-              <KbDashboard kb={kb} posts={posts} actions={{ done: actionsDone, total: actions.length }}
+              <KbDashboard kb={kb} posts={posts}
                 clubDismissed={clubDismissed} onDismissClub={dismissClub} />
               <Markdown text={dropTeachLine(kb.markdown)} tasks={{ checked, toggle }} />
             </>
@@ -406,7 +417,7 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
           )}
         </TabsContent>
 
-        <TabsContent value="theory" className="space-y-4 pt-4">
+        <TabsContent value="theory" className="space-y-4">
           {theory ? (
             <>
               <div className="flex flex-wrap items-center gap-2">
@@ -423,15 +434,15 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
                 </Button>
                 <div className="ml-auto flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" disabled={!!run} onClick={() => setDialogTopic(theory.topic)}>
-                    <RefreshCw /> {theory.markdown ? t('cv.regenerate') : t('cv.resume')}
+                    <ArrowsRotateRight /> {theory.markdown ? t('cv.regenerate') : t('cv.resume')}
                   </Button>
                   {theory.markdown && (
                     <Button variant="outline" size="sm" onClick={() => download(t('cv.theoryFile', { name: creator.name, topic: topicLabel(theory.topic) }), theory.markdown!)}>
-                      <Download /> {t('common.download')}
+                      <ArrowDownToLine /> {t('common.download')}
                     </Button>
                   )}
                   <Button variant="outline" size="sm" disabled={mine} onClick={() => removeTheory(theory.topic)}>
-                    <Trash2 /> {t('common.delete')}
+                    <TrashBin /> {t('common.delete')}
                   </Button>
                 </div>
               </div>
@@ -465,7 +476,7 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
           )}
         </TabsContent>
 
-        <TabsContent value="posts" className="pt-4">
+        <TabsContent value="posts">
           <Table>
             <TableHeader>
               <TableRow>
@@ -486,7 +497,9 @@ export function CreatorView({ creator, run, stopped, onRetry, onDelete, onStart,
                     {p.error && <p className="mt-1 text-xs text-destructive">{p.error}</p>}
                   </TableCell>
                   <TableCell className="align-top">
-                    <Badge variant={STATUS[p.status].variant}>{t(STATUS[p.status].label)}</Badge>
+                    <span className={cn('inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap', STATUS[p.status].text)}>
+                      <span className={cn('size-1.5 rounded-full', STATUS[p.status].dot)} aria-hidden />{t(STATUS[p.status].label)}
+                    </span>
                   </TableCell>
                 </TableRow>
               ))}

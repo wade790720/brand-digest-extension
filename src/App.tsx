@@ -1,16 +1,15 @@
-import { MoreHorizontal, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { Gear } from '@gravity-ui/icons'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { CreatorSwitcher } from '@/components/CreatorSwitcher'
 import { CreatorView } from '@/components/CreatorView'
 import { ALL } from '@/components/TheoryDialog'
-import { SettingsDialog } from '@/components/SettingsDialog'
+import { SettingsView } from '@/components/SettingsView'
 import { Welcome } from '@/components/Welcome'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Separator } from '@/components/ui/separator'
 import { LlmError } from '@/lib/llm'
 import { processCreator, type Progress, type RunEvent, type Step } from '@/lib/pipeline'
 import { cn } from '@/lib/utils'
@@ -52,6 +51,7 @@ export default function App() {
   const [toDelete, setToDelete] = useState<Creator | null>(null)
   const [run, setRun] = useState<Run | null>(null)
   const [stopped, setStopped] = useState<Stopped | null>(null)
+  const [tabsSlot, setTabsSlot] = useState<HTMLDivElement | null>(null)
   const abort = useRef<AbortController | null>(null)
   const lastTask = useRef<{ task: Task; doneMsg: string } | null>(null)
 
@@ -73,6 +73,7 @@ export default function App() {
   }, [run])
 
   const current = creators.find((c) => c.name === selected)
+  const go = (name: string | null) => (setSelected(name), setSettingsOpen(false))
 
   async function runTask(creator: Creator, task: Task, doneMsg: string) {
     if (run) return
@@ -116,57 +117,32 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground md:flex-row">
-      <aside className="flex max-h-[40vh] w-full shrink-0 flex-col border-b bg-sidebar text-sidebar-foreground md:max-h-none md:w-60 md:border-r md:border-b-0">
-        <button className="flex h-12 items-center gap-2 px-3 text-left" onClick={() => setSelected(null)}>
-          <img src="/icons/icon-48.png" alt="" className="size-6 rounded-md" />
-          <span className="font-semibold text-foreground">{t('app.shortName')}</span>
-        </button>
-        <Separator />
-        <p className="px-4 pt-4 pb-2 text-xs text-muted-foreground">{t('app.creators')}</p>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2">
-          {creators.length === 0 && <p className="px-2 py-1 text-sm text-muted-foreground">{t('app.noCreators')}</p>}
-          {creators.map((c) => {
-            const on = c.name === selected
-            return (
-              <div key={c.name} className={cn('group relative flex items-center rounded-md', on ? 'bg-accent' : 'hover:bg-accent/60')}>
-                <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 py-1.5 text-left text-sm"
-                  aria-current={on ? 'page' : undefined} onClick={() => setSelected(c.name)}>
-                  <span className={cn('truncate', on && 'font-medium')}>{c.name}</span>
-                  <span className={cn('shrink-0 text-xs text-muted-foreground tabular-nums group-focus-within:invisible group-hover:invisible', on && 'invisible')}>
-                    {c.codes.length}
-                  </span>
-                </button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon-xs" aria-label={t('app.moreFor', { name: c.name })}
-                      className={cn('absolute right-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100', on && 'opacity-100')}>
-                      <MoreHorizontal />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem variant="destructive" onSelect={() => setToDelete(c)} disabled={run?.creator === c.name}>
-                      <Trash2 /> {t('common.delete')}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )
-          })}
-        </div>
-        <Separator />
-        <div className="p-2">
-          <Button variant="ghost" className="w-full justify-start" onClick={() => setSettingsOpen(true)}>
-            <SettingsIcon /> {t('app.settings')}
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <header className="shrink-0 border-b bg-background">
+        <div className="flex h-14 items-center gap-4 px-8 max-md:gap-2 max-md:px-4">
+          <button className="flex shrink-0 items-center gap-2.5 rounded-md" onClick={() => go(null)}>
+            <img src="/icons/icon-48.png" alt="" className="size-6 rounded-md" />
+            <span className="text-sm font-semibold max-sm:sr-only">{t('app.shortName')}</span>
+          </button>
+          <span className="flex-1 max-md:hidden" />
+          {creators.length > 0 && <CreatorSwitcher creators={creators} current={current?.name} onPick={go} />}
+          <Button variant="ghost" size="icon" aria-label={t('app.settings')} title={t('app.settings')} aria-pressed={settingsOpen}
+            onClick={() => setSettingsOpen(!settingsOpen)}
+            className={cn('shrink-0 text-text-secondary hover:text-foreground max-md:ml-auto', settingsOpen && 'bg-row-active text-foreground')}>
+            <Gear />
           </Button>
         </div>
-      </aside>
+        <div ref={setTabsSlot} className={cn('px-8 max-md:px-4', settingsOpen && 'hidden')} />
+      </header>
 
-      <main className="min-w-0 flex-1 overflow-y-auto">
-        {current ? (
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+        {settingsOpen ? (
+          <SettingsView />
+        ) : current ? (
           <CreatorView
             key={current.name}
             creator={current}
+            tabsSlot={tabsSlot}
             run={run}
             stopped={stopped?.creator === current.name ? stopped : undefined}
             onDelete={() => setToDelete(current)}
@@ -179,11 +155,11 @@ export default function App() {
             onStop={() => abort.current?.abort()}
           />
         ) : (
-          <Welcome creators={creators} onSelect={setSelected} />
+          <Welcome creators={creators} onSelect={go} />
         )}
       </main>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <StatusBar run={run} creators={creators} />
 
       <Dialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <DialogContent>
@@ -202,5 +178,23 @@ export default function App() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function StatusBar({ run, creators }: { run: Run | null; creators: Creator[] }) {
+  const p = run?.progress
+  const text = p ? `${run!.creator} · ${p.status}` : t('app.statusIdle', { creators: creators.length, posts: creators.reduce((n, c) => n + c.codes.length, 0) })
+  return (
+    // 拆解畫面有自己的播報，這裡就不再念每一步
+    <footer role="status" aria-live={p?.codes ? 'off' : 'polite'} className="flex min-h-9 shrink-0 items-center gap-3 border-t px-8 py-1.5 text-xs max-md:px-4">
+      <span className="min-w-0 flex-1 truncate text-muted-foreground" title={text}>{text}</span>
+      {p && (
+        <span className="relative h-1 w-32 shrink-0 overflow-hidden rounded-full bg-muted max-sm:w-16" aria-hidden>
+          {p.total
+            ? <span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-300" style={{ width: `${Math.round((p.done / p.total) * 100)}%` }} />
+            : <span className="absolute inset-y-0 w-1/3 animate-[indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-primary" />}
+        </span>
+      )}
+    </footer>
   )
 }

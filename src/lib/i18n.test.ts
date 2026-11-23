@@ -21,6 +21,6 @@ it('預設語言：zh 開頭用中文，其他用英文；手動設定優先', (
 })
 
 it('t 代入變數', () => {
-  expect(t('cv.collected', { n: 3 }, 'en')).toBe('3 collected')
-  expect(t('cv.collected', { n: 3 }, 'zh-TW')).toBe('已收集 3 則')
+  expect(t('common.posts', { n: 3 }, 'en')).toBe('3 posts')
+  expect(t('common.posts', { n: 3 }, 'zh-TW')).toBe('3 則')
 })

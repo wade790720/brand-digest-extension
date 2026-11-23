@@ -1,15 +1,17 @@
-import { mergeCollected } from '@/lib/store'
+import { mergeCollected, saveAvatar } from '@/lib/store'
 import { browserLang, resolveLang, t } from '@/lib/i18n'
 import type { CollectMessage, Settings } from '@/types'
 
 chrome.runtime.onMessage.addListener((msg: CollectMessage, sender) => {
   if (msg?.type !== 'collect' || !sender.tab?.id) return
   const tabId = sender.tab.id
-  mergeCollected(msg.creator, msg.fullName, msg.posts)
-    .then(async ({ total }) => {
+  const merged = msg.posts.length ? mergeCollected(msg.creator, msg.fullName, msg.posts) : null
+  if (msg.avatarUrl) saveAvatar(msg.creator, msg.avatarUrl).catch((err) => console.error('avatar failed', err))
+  merged
+    ?.then(async ({ total }) => {
       const { settings } = (await chrome.storage.local.get('settings')) as { settings?: Settings }
       const lang = resolveLang(settings?.lang, browserLang())
-      chrome.action.setBadgeBackgroundColor({ tabId, color: '#c24700' }) // Chrome API 只收色碼：同 index.css 的 --primary
+      chrome.action.setBadgeBackgroundColor({ tabId, color: '#232323' }) // Chrome API 只收色碼：同 index.css 的 --primary
       chrome.action.setBadgeText({ tabId, text: String(total) })
       chrome.action.setTitle({ tabId, title: t('bg.title', { app: t('app.name', {}, lang), name: msg.creator, n: total }, lang) })
     })

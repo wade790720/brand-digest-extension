@@ -1,6 +1,8 @@
-import { beforeEach, expect, it } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 import { mem } from './test-storage'
-import { getCreators, importAll, mergeCollected } from './store'
+import { getCreators, importAll, mergeCollected, saveAvatar } from './store'
+
+vi.mock('./image', () => ({ toJpeg: async () => 'data:image/jpeg;base64,AA' }))
 
 beforeEach(() => mem.clear())
 
@@ -55,4 +57,23 @@ it('備份裡的貼文格式不對（缺狀態）：一樣拒絕，不寫入會�
   const err = await importAll({ app: 'brand-digest', data: { 'post:A': { code: 'A', caption: 'x' } } }).catch((e) => e)
   expect(err.message).toContain('備份檔')
   expect(mem.has('post:A')).toBe(false)
+})
+
+it('頭像：只抓 IG 圖片網址、抓一次、不會蓋掉同時收到的貼文；匯入舊備份不會弄丟', async () => {
+  const fetchMock = vi.fn(async () => new Response('img'))
+  vi.stubGlobal('fetch', fetchMock)
+  mem.set('creator:coach', { name: 'coach', fullName: '', codes: ['A'] })
+  await saveAvatar('coach', 'https://evil.example/a.jpg')
+  expect(fetchMock).not.toHaveBeenCalled()
+  await Promise.all([
+    saveAvatar('coach', 'https://scontent.cdninstagram.com/a.jpg'),
+    mergeCollected('coach', '', [{ code: 'B', creator: 'coach', takenAt: 2, caption: '' }]),
+  ])
+  expect(mem.json('creator:coach').avatar).toBe('data:image/jpeg;base64,AA')
+  expect(mem.json('creator:coach').codes.sort()).toEqual(['A', 'B'])
+  await saveAvatar('coach', 'https://scontent.cdninstagram.com/a.jpg')
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  await importAll({ app: 'brand-digest', data: { 'creator:coach': { name: 'coach', fullName: '', codes: ['A'] } } })
+  expect(mem.json('creator:coach').avatar).toBe('data:image/jpeg;base64,AA')
+  vi.unstubAllGlobals()
 })

@@ -1,3 +1,4 @@
+import { toJpeg } from '@/lib/image'
 import { LlmError, PROVIDER_NAMES, generate, inputBudget, parseJson, transcribe } from '@/lib/llm'
 import { getLang, t, type Lang } from '@/lib/i18n'
 import { HOOK_TYPES, aggregateSystem, aggregateUser, digestSystem, digestUser, mergeUser } from '@/lib/prompts'
@@ -62,16 +63,7 @@ async function saveThumb(p: Post, signal: AbortSignal) {
   try {
     const res = await fetch(p.thumbUrl, { credentials: 'omit', signal })
     if (!res.ok) return
-    const img = await createImageBitmap(await res.blob(), { resizeWidth: 160, resizeQuality: 'medium' })
-    const canvas = new OffscreenCanvas(img.width, img.height)
-    canvas.getContext('2d')!.drawImage(img, 0, 0)
-    const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.7 })
-    p.thumb = await new Promise<string>((ok, fail) => {
-      const r = new FileReader()
-      r.onload = () => ok(String(r.result))
-      r.onerror = fail
-      r.readAsDataURL(jpeg)
-    })
+    p.thumb = await toJpeg(await res.blob(), 160)
   } catch {}
 }
 

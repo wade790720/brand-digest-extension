@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react'
+import { ArrowsRotateRight } from '@gravity-ui/icons'
 import { useEffect, useState } from 'react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -100,12 +100,12 @@ export function TheoryDialog({ creator, open, initialTopic, onOpenChange, onStar
         <DialogFooter>
           {text === null ? (
             <Button onClick={() => propose(false)} disabled={busy}>
-              {busy ? <><Loader2 className="animate-spin" /> {t('theory.thinkingLong')}</> : t('theory.propose')}
+              {busy ? <><ArrowsRotateRight className="animate-spin" /> {t('theory.thinkingLong')}</> : t('theory.propose')}
             </Button>
           ) : (
             <>
               <Button variant="outline" onClick={() => propose(true)} disabled={busy}>
-                {busy ? <><Loader2 className="animate-spin" /> {t('theory.thinking')}</> : t('theory.proposeAgain')}
+                {busy ? <><ArrowsRotateRight className="animate-spin" /> {t('theory.thinking')}</> : t('theory.proposeAgain')}
               </Button>
               <Button onClick={start} disabled={busy}>{t('theory.generate')}</Button>
             </>

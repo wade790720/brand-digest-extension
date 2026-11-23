@@ -64,7 +64,7 @@ function show(lang: Lang, title: string, body: string, buttons: { label: string;
       animation: in 200ms ease-out; }
     @keyframes in { from { opacity: 0; transform: translateY(8px); } }
     @media (prefers-reduced-motion: reduce) { .box { animation: none; } }
-    .box { --primary: #c24700; --primary-text: #ff801f; }
+    .box { --primary: #ececec; --primary-text: #e5e5e5; }
     .brand { font-size: 12px; color: var(--primary-text); font-weight: 600; }
     .title { margin: 2px 0 4px; font-weight: 600; }
     .body { margin: 0; color: #a1a1aa; font-size: 13px; }
@@ -72,7 +72,7 @@ function show(lang: Lang, title: string, body: string, buttons: { label: string;
     .row:empty { display: none; }
     button { font: inherit; font-weight: 600; padding: 6px 14px; border-radius: 8px; cursor: pointer;
       border: 1px solid rgb(255 255 255 / 15%); background: transparent; color: #fafafa; transition: filter 150ms ease-out; }
-    button.primary { background: var(--primary); border-color: var(--primary); }
+    button.primary { background: var(--primary); border-color: var(--primary); color: #171717; }
     @media (hover: hover) { button:hover { filter: brightness(1.15); } }
     button:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 2px; }
   </style>

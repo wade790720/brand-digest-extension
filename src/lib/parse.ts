@@ -22,7 +22,7 @@ export function audioUrlOf(manifest?: string): string | undefined {
 }
 
 /** 訊息來自 IG 頁面，頁面上別的程式也能偽造：只收 IG 的圖片、影片伺服器網址 */
-const igCdn = (url?: string) => (url && /^https:\/\/[^/]+\.(fbcdn\.net|cdninstagram\.com)\//.test(url) ? url : undefined)
+export const igCdn = (url?: string) => (url && /^https:\/\/[^/]+\.(fbcdn\.net|cdninstagram\.com)\//.test(url) ? url : undefined)
 
 const num = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : undefined)
 
@@ -40,6 +40,18 @@ export function thumbUrlOf(it: Item): string | undefined {
   const list: Item[] = (it.image_versions2 ?? it.carousel_media?.[0]?.image_versions2)?.candidates ?? []
   const c = list.filter((x) => typeof x?.url === 'string').sort((a, b) => (a.width ?? 0) - (b.width ?? 0))
   return (c.find((x) => x.width >= 150) ?? c.at(-1))?.url
+}
+
+/** 找這位主播的頭像網址。貼文裡的 user 通常沒有頭像，它在另一段主播資料裡，所以整份找 username 相符的物件 */
+export function avatarOf(json: unknown, creator: string): string | undefined {
+  let found: string | undefined
+  ;(function walk(o: unknown) {
+    if (found || !o || typeof o !== 'object') return
+    const it = o as Item
+    if (typeof it.username === 'string' && it.username.toLowerCase() === creator) found = igCdn(it.profile_pic_url)
+    for (const v of Object.values(it)) walk(v)
+  })(json)
+  return found
 }
 
 /** 從 IG 頁面自己收到的 graphql 回應中，挑出這位主播的貼文。

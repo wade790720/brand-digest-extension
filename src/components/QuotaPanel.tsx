@@ -1,6 +1,5 @@
 import { useEffect, useId, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { getLang, t } from '@/lib/i18n'
 import { PROVIDER_NAMES, WHISPER, minuteUsage } from '@/lib/llm'
@@ -21,11 +20,11 @@ export function StatusBadge({ st }: { st?: ModelStatus }) {
 
 function ModelList({ title, prefix, models, status }: { title: string; prefix: string; models: string[]; status: Record<string, ModelStatus> }) {
   return (
-    <div className="space-y-1">
-      <p className="text-xs text-muted-foreground">{title}</p>
-      <ul className="divide-y rounded-lg border text-xs">
+    <div className="border-b px-4 py-3 last:border-b-0">
+      <p className="mb-1 text-xs text-muted-foreground">{title}</p>
+      <ul className="divide-y">
         {models.map((m) => (
-          <li key={m} className="flex items-center justify-between gap-3 px-2.5 py-1.5">
+          <li key={m} className="flex min-h-9 items-center justify-between gap-3 py-1">
             <span className="min-w-0 truncate" title={m}>{m}</span>
             <StatusBadge st={status[`${prefix}:${m}`]} />
           </li>
@@ -35,7 +34,7 @@ function ModelList({ title, prefix, models, status }: { title: string; prefix: s
   )
 }
 
-export function QuotaPanel({ provider, models, status }: { provider: Provider; models: string[]; status: Record<string, ModelStatus> }) {
+export function QuotaRows({ provider, models, status }: { provider: Provider; models: string[]; status: Record<string, ModelStatus> }) {
   const [now, setNow] = useState(Date.now)
   const labelId = useId()
   useEffect(() => {
@@ -47,22 +46,21 @@ export function QuotaPanel({ provider, models, status }: { provider: Provider; m
   const num = new Intl.NumberFormat(getLang())
 
   return (
-    <div className="grid gap-3">
-      <Label>{t('quota.title')}</Label>
+    <>
       {usage && (
-        <div className="space-y-1.5">
-          <div className="flex items-baseline justify-between gap-3 text-xs">
-            <span id={labelId} className="text-muted-foreground">{t('quota.minute', { name })}</span>
+        <div className="space-y-2 border-b px-4 py-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <span id={labelId} className="font-medium">{t('quota.minute', { name })}</span>
             <span className="shrink-0 tabular-nums">{num.format(usage.used)} / {num.format(usage.cap)}</span>
           </div>
-          <Progress value={Math.round((usage.used / usage.cap) * 100)} aria-labelledby={labelId} />
-          <p className="text-xs text-muted-foreground tabular-nums">
+          <Progress className="bg-row-active" value={Math.round((usage.used / usage.cap) * 100)} aria-labelledby={labelId} />
+          <p className="text-xs text-text-secondary tabular-nums">
             {usage.freesInMs ? t('quota.frees', { s: Math.ceil(usage.freesInMs / 1000) }) : t('quota.idle')}
           </p>
         </div>
       )}
       <ModelList title={t('quota.extract', { name })} prefix={provider} models={models} status={status} />
       <ModelList title={t('quota.transcribe')} prefix="whisper" models={WHISPER} status={status} />
-    </div>
+    </>
   )
 }

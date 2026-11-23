@@ -1,4 +1,4 @@
-import { Check, Loader2, Play } from 'lucide-react'
+import { Check, ArrowsRotateRight, Play } from '@gravity-ui/icons'
 import { useState } from 'react'
 import type { LogEntry, Stopped } from '@/App'
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,7 @@ export function StepRail({ progress }: { progress: Progress }) {
               className={cn('flex items-center gap-1 rounded-full border px-2 py-0.5',
                 i === now ? 'border-primary font-medium text-foreground' : i < now ? 'text-foreground' : 'border-dashed text-muted-foreground')}>
               {i < now && <Check className="size-3" aria-hidden />}
-              {i === now && <Loader2 className="size-3 motion-safe:animate-spin" aria-hidden />}
+              {i === now && <ArrowsRotateRight className="size-3 motion-safe:animate-spin" aria-hidden />}
               {stepLabel(s)}
             </li>
           ))}
@@ -52,13 +52,13 @@ export function StopDetail({ stopped, onRetry, busy }: { stopped: Stopped; onRet
   const { where, log } = stopped
   const waits = where?.code ? log.filter((e) => e.level === 'warn' && e.code === where.code).length : 0
   return (
-    <section role="alert" className="space-y-3 rounded-xl border border-destructive/40 p-4">
+    <section role="alert" className="tile space-y-3 rounded-xl border-destructive/40! p-4">
       <p className="font-medium text-destructive">{t('cv.stopped')}</p>
       {where?.step && (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-medium">
           {where.index ? t('stop.where', { i: where.index, step: stepLabel(where.step) }) : stepLabel(where.step)}
           {where.code && (
-            <a className="font-normal text-[var(--primary-text)] underline-offset-4 hover:underline"
+            <a className="font-normal underline underline-offset-4"
               href={`https://www.instagram.com/p/${where.code}/`} target="_blank" rel="noreferrer">{t('stop.post')}</a>
           )}
         </p>
@@ -86,15 +86,17 @@ export function RunLog({ log, startedAt }: { log: LogEntry[]; startedAt: number 
 
   return (
     <div className="space-y-2">
-      <div role="group" aria-label={t('log.title')} className="flex flex-wrap gap-1">
+      <div role="group" aria-label={t('log.title')} className="flex flex-wrap gap-2">
         {FILTERS.map(([f, label]) => (
-          <Button key={f} size="xs" variant={filter === f ? 'secondary' : 'ghost'} aria-pressed={filter === f} onClick={() => setFilter(f)}>
-            {t(label)} <span className="tabular-nums text-muted-foreground">{f === 'all' ? log.length : log.filter((e) => e.level === f).length}</span>
-          </Button>
+          <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)}
+            className={cn('flex h-9 shrink-0 items-center gap-1.5 rounded-[calc(var(--radius)-2px)] border px-3 text-sm font-medium whitespace-nowrap shadow-[var(--shadow-xs)] transition-[background-color,border-color,color] duration-[120ms] ease-[var(--ease-ui)]',
+              filter === f ? 'border-[var(--chip-on-line)] bg-[var(--chip-on)] text-foreground' : 'border-line-strong bg-card text-foreground hover:bg-row-hover')}>
+            {t(label)}<span className="text-xs tabular-nums text-muted-foreground">{f === 'all' ? log.length : log.filter((e) => e.level === f).length}</span>
+          </button>
         ))}
       </div>
       {shown.length ? (
-        <ol className="max-h-64 overflow-y-auto overscroll-contain rounded-lg border text-xs">
+        <ol className="scroll-fade tile max-h-64 overflow-y-auto overscroll-contain rounded-xl text-xs">
           {shown.map((e) => (
             <li key={e.i} className="grid grid-cols-[2.75rem_4rem_minmax(0,1fr)] gap-2 border-b px-3 py-1.5 last:border-b-0">
               <span className="text-muted-foreground tabular-nums">{clock(e.at)}</span>

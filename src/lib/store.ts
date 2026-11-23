@@ -1,3 +1,5 @@
+import { toJpeg } from '@/lib/image'
+import { igCdn } from '@/lib/parse'
 import { t } from '@/lib/i18n'
 import type { Creator, KnowledgeBase, ModelStatus, Playbook, Post, Settings, TheoryDoc } from '@/types'
 
@@ -90,6 +92,25 @@ let merging: Promise<unknown> = Promise.resolve()
 
 export function mergeCollected(creator: string, fullName: string, posts: Omit<Post, 'status' | 'collectedAt'>[]) {
   const run = merging.then(() => mergeOnce(creator, fullName, posts))
+  merging = run.catch(() => {})
+  return run
+}
+
+/** 頭像只抓一次。網址來自 IG 頁面的訊息，這裡再驗一次是 IG 的圖片伺服器
+ *  ponytail: 存了就不更新，主播換頭像要刪掉主播重新收集 */
+export async function saveAvatar(creator: string, url: string) {
+  if (!igCdn(url)) return
+  await merging // 同一批的貼文先寫完，這位主播才存在
+  const key = `creator:${creator}`
+  const known = (await area.get([key]))[key]
+  if (!known || known.avatar) return
+  const res = await fetch(url, { credentials: 'omit' })
+  if (!res.ok) return
+  const avatar = await toJpeg(await res.blob(), 96)
+  const run = merging.then(async () => {
+    const c = (await area.get([key]))[key]
+    if (c) await area.set({ [key]: { ...c, avatar } })
+  })
   merging = run.catch(() => {})
   return run
 }
@@ -190,7 +211,7 @@ export async function importAll(backup: unknown): Promise<number> {
     if (k.startsWith('post:') && old.status === 'done' && (v as Post).status !== 'done') data[k] = old
     if (k.startsWith('creator:')) {
       const c = v as Creator
-      data[k] = { ...c, codes: [...new Set([...c.codes, ...(old as Creator).codes])] }
+      data[k] = { ...old, ...c, codes: [...new Set([...c.codes, ...(old as Creator).codes])] }
     }
     if ((k.startsWith('kb:') || k.startsWith('playbook:')) && (old.updatedAt ?? 0) > ((v as KnowledgeBase).updatedAt ?? 0)) data[k] = old
     if (k.startsWith('theory:')) data[k] = { ...old, ...(v as object) }
