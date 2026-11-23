@@ -35,3 +35,11 @@ it('匯入備份：本機較新的知識庫和手冊不會被舊備份蓋掉；�
   expect(mem.json('post:A').status).toBe('done')
   expect(mem.json('creator:coach').codes.sort()).toEqual(['A', 'B'])
 })
+
+it('同時收到兩批收集：誰呼叫都依序合併，兩批的貼文都留在清單裡', async () => {
+  await Promise.all([
+    mergeCollected('coach', '', [{ code: 'P1', creator: 'coach', takenAt: 1, caption: '' }]),
+    mergeCollected('coach', '', [{ code: 'P2', creator: 'coach', takenAt: 2, caption: '' }]),
+  ])
+  expect(mem.json('creator:coach').codes.sort()).toEqual(['P1', 'P2'])
+})

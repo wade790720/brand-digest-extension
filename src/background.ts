@@ -2,13 +2,10 @@ import { mergeCollected } from '@/lib/store'
 import { browserLang, resolveLang, t } from '@/lib/i18n'
 import type { CollectMessage, Settings } from '@/types'
 
-let queue = Promise.resolve()
-
 chrome.runtime.onMessage.addListener((msg: CollectMessage, sender) => {
   if (msg?.type !== 'collect' || !sender.tab?.id) return
   const tabId = sender.tab.id
-  queue = queue
-    .then(() => mergeCollected(msg.creator, msg.fullName, msg.posts))
+  mergeCollected(msg.creator, msg.fullName, msg.posts)
     .then(async ({ total }) => {
       const { settings } = (await chrome.storage.local.get('settings')) as { settings?: Settings }
       const lang = resolveLang(settings?.lang, browserLang())

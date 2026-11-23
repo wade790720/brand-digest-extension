@@ -124,7 +124,7 @@ export async function buildPlaybook(creator: Creator, signal: AbortSignal, onPro
       const b = toBreakdown(parseJson(raw))
       if (b) await updatePost(p.code, { script: b })
     } catch (e) {
-      if (e instanceof LlmError && ['auth', 'quota', 'model', 'rate', 'overload'].includes(e.kind)) throw e
+      if (e instanceof LlmError && e.isFatal) throw e
     }
   }
   if (signal.aborted) return

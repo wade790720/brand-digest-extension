@@ -105,7 +105,7 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
       p.error = undefined
     } catch (e) {
       if (signal.aborted) break
-      if (e instanceof LlmError && ['auth', 'quota', 'model', 'rate', 'overload'].includes(e.kind)) {
+      if (e instanceof LlmError && e.isFatal) {
         fatal = e
         break
       }

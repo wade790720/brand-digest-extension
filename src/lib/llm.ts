@@ -10,6 +10,11 @@ export class LlmError extends Error {
     this.kind = kind
     this.retryAfterSec = retryAfterSec
   }
+
+  /** 下一則多半也會一樣失敗：停下整批，免得白白消耗每日額度。rate、overload 到呼叫端時已經重試過了 */
+  get isFatal() {
+    return ['auth', 'quota', 'model', 'rate', 'overload'].includes(this.kind)
+  }
 }
 
 export const PROVIDER_NAMES: Record<Provider, string> = {

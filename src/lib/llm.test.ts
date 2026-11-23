@@ -64,3 +64,8 @@ it('排隊：最近 60 秒加上這次超過上限，就等最舊的幾筆過期
   expect(waitNeeded(log, 20_000, 5000, 7000)).toBe(50_000)
   expect(waitNeeded(log, 65_000, 5000, 7000)).toBe(5000)
 })
+
+it('哪些錯誤要停下整批：金鑰、額度、模型、重試完仍限流或過載；格式錯和太長只跳過這一則', () => {
+  for (const kind of ['auth', 'quota', 'model', 'rate', 'overload'] as const) expect(new LlmError('x', kind).isFatal).toBe(true)
+  for (const kind of ['too_large', 'bad_json', 'other'] as const) expect(new LlmError('x', kind).isFatal).toBe(false)
+})

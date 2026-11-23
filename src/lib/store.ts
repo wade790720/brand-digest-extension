@@ -85,7 +85,16 @@ export async function getKnowledgeBase(creator: string): Promise<KnowledgeBase |
 
 export const saveKnowledgeBase = (creator: string, kb: KnowledgeBase) => area.set({ [`kb:${creator}`]: kb })
 
-export async function mergeCollected(creator: string, fullName: string, posts: Omit<Post, 'status' | 'collectedAt'>[]) {
+// 兩批同時合併會讀到同一份舊的主播索引而互相覆蓋：一次只合併一批，誰呼叫都一樣
+let merging: Promise<unknown> = Promise.resolve()
+
+export function mergeCollected(creator: string, fullName: string, posts: Omit<Post, 'status' | 'collectedAt'>[]) {
+  const run = merging.then(() => mergeOnce(creator, fullName, posts))
+  merging = run.catch(() => {})
+  return run
+}
+
+async function mergeOnce(creator: string, fullName: string, posts: Omit<Post, 'status' | 'collectedAt'>[]) {
   const keys = posts.map((p) => `post:${p.code}`)
   const got = await area.get([`creator:${creator}`, ...keys])
   const idx: Creator = got[`creator:${creator}`] ?? { name: creator, fullName, codes: [] }
