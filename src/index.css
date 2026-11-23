@@ -333,7 +333,10 @@
   font-size: 1rem; line-height: 1.8;
 }
 .md-doc > :first-child { margin-top: 0; }
-.md-doc > p { margin: 0; font-size: var(--text-xs); color: var(--muted-foreground); }
+/* 文件只用三種字級：區塊標題 20px，內文和小標 16px，補充說明 13px。小標靠字重和顏色分層級 */
+.md-doc > p { margin: 0; max-width: none; font-size: var(--text-xs); line-height: var(--text-xs--line-height); color: var(--muted-foreground); }
+/* Geist 和中文字型都沒有斜體，瀏覽器硬斜會變形 */
+.md-doc em { font-style: normal; }
 .md-doc :where(p, li) { max-width: 70ch; }
 
 .md-section {
@@ -352,7 +355,7 @@
 .md-section[data-tone="source"] { --tone: var(--muted-foreground); --tone-text: var(--foreground); }
 .md-section input[type="checkbox"] { accent-color: var(--tone); }
 .md-section > :last-child { margin-bottom: 0; }
-.md-section > h2 { display: flex; align-items: center; gap: 0.625rem; margin: 0 0 0.875rem; font-size: 1.125rem; line-height: 1.4; font-weight: 600; }
+.md-section > h2 { display: flex; align-items: center; gap: 0.625rem; margin: 0 0 0.875rem; font-size: var(--text-lg); line-height: var(--text-lg--line-height); font-weight: 600; }
 .md-section > h2 + * { margin-top: 0; }
 .md-tone-icon {
   display: grid; flex: none; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 0.5rem;
@@ -360,22 +363,37 @@
 }
 .md-section h3 { display: flex; align-items: center; gap: 0.5rem; margin: 1.5rem 0 0.5rem; font-size: 1rem; line-height: 1.5; font-weight: 600; }
 .md-section h3::before { content: ""; flex: none; width: 0.375rem; height: 0.375rem; border-radius: 9999px; background: var(--tone); }
-.md-section h4 { margin: 1.25rem 0 0.375rem; color: var(--tone-text); font-size: var(--text-sm); font-weight: 600; }
+.md-section h4 { margin: 1.25rem 0 0.375rem; color: var(--tone-text); font-size: var(--text-base); line-height: 1.5; font-weight: 600; }
 .md-section blockquote {
   margin: 0.875rem 0; padding: 0.625rem 0.875rem; border: 0; border-radius: 0.625rem; quotes: none;
   background: color-mix(in oklab, var(--tone) 12%, transparent); color: var(--foreground); font-style: normal; font-weight: 400;
 }
 .md-section blockquote p { margin: 0; }
-.md-section table { display: block; overflow-x: auto; margin: 0.875rem 0; font-size: var(--text-xs); line-height: 1.6; }
-.md-section thead { border-bottom-color: var(--line-strong); }
-.md-section th { background: var(--row-hover); color: var(--foreground); padding: 0.5rem 0.75rem; white-space: nowrap; }
-.md-section td { padding: 0.5rem 0.75rem; }
-.md-section[data-tone="source"] ol { max-height: 18rem; margin: 0; overflow-y: auto; overscroll-behavior: contain; font-size: var(--text-xs); line-height: 1.7; }
+.md-table [data-slot="table"] { font-size: 1rem; line-height: 1.6; }
+.md-table [data-slot="table-row"] { border-color: var(--border); transition: background-color 120ms var(--ease-ui); }
+.md-table [data-slot="table-header"] [data-slot="table-row"] { border-color: var(--line-strong); }
+@media (hover: hover) {
+  .md-table [data-slot="table-row"]:hover { background-color: var(--row-hover); }
+  .md-table [data-slot="table-header"] [data-slot="table-row"]:hover { background-color: transparent; }
+}
+.md-table [data-slot="table-head"] { height: 2.25rem; padding: 0 0.75rem; color: var(--muted-foreground); font-size: var(--text-xs); line-height: var(--text-xs--line-height); font-weight: 500; }
+.md-table [data-slot="table-cell"] { min-width: 7rem; padding: 0.625rem 0.75rem; vertical-align: top; white-space: normal; color: var(--text-secondary); }
+.md-table [data-slot="table-cell"]:first-child { color: var(--foreground); font-weight: 500; }
+.md-table [data-num] { min-width: 0; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.md-table [data-slot="table-cell"][data-num] { min-width: 4.5rem; color: var(--foreground); }
+.md-table [data-slot="table-cell"][data-bar] { width: 45%; min-width: 11rem; }
+.md-table strong { color: var(--tone-text); font-weight: 600; }
+.md-table a:not(.md-cite) { text-decoration: underline; text-underline-offset: 4px; }
+.md-bar-cell { display: flex; align-items: center; gap: 0.75rem; }
+.md-bar-cell > :last-child { min-width: 4ch; text-align: right; }
+.md-bar { flex: 1; height: 0.375rem; overflow: hidden; border-radius: 9999px; background: var(--row-active); }
+.md-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--tone); }
+.md-section[data-tone="source"] ol { max-height: 18rem; margin: 0; overflow-y: auto; overscroll-behavior: contain; }
 
 .md-cite {
   display: inline-flex; align-items: center; justify-content: center; height: 1.45em; min-width: 1.45em; margin-inline: 1px; padding-inline: 0.25rem;
   border-radius: 0.3125rem; background: var(--row-active); color: var(--text-secondary);
-  font-size: 0.7em; font-weight: 500; line-height: 1; vertical-align: 0.1em; text-decoration: none; font-variant-numeric: tabular-nums;
+  font-size: 0.75rem; font-weight: 500; line-height: 1; vertical-align: 0.1em; text-decoration: none; font-variant-numeric: tabular-nums;
   transition: background-color 120ms var(--ease-ui), color 120ms var(--ease-ui);
 }
 @media (hover: hover) { .md-cite:hover { background: color-mix(in oklab, var(--tone) 28%, transparent); color: var(--foreground); } }

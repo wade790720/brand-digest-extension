@@ -14,5 +14,9 @@ it('每個 ## 連同內容包成一區，第一個標題前的內容留在外面
   const tree = { type: 'root', children: [el('p', '共 3 則'), el('h2', '可行動清單'), el('ul', 'A'), el('h2', '來源索引'), el('ol', 'B')] }
   rehypeSections()(tree)
   expect(tree.children.map((n) => n.tagName)).toEqual(['p', 'section', 'section'])
+  const newline = { type: 'text', value: '\n' }
+  const withRule = { type: 'root', children: [el('h2', '一句話總結'), el('p', 'A'), newline, { type: 'element', tagName: 'hr', children: [] }, { ...newline }] }
+  rehypeSections()(withRule)
+  expect((withRule.children[0] as { children: { tagName?: string }[] }).children.map((n) => n.tagName)).toEqual(['h2', 'p'])
   expect(tree.children[1]).toMatchObject({ properties: { dataTone: 'action' }, children: [{ tagName: 'h2' }, { tagName: 'ul' }] })
 })

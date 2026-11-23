@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { deleteTheory, getChecks, getKnowledgeBase, getPlaybook, getPosts, getSettings, getTheories, onStoreChange, saveChecks, saveSettings } from '@/lib/store'
 import { linkCites } from '@/lib/cites'
+import { rehypeTables, repairBold } from '@/lib/md-fix'
 import { getLang, t, type Key } from '@/lib/i18n'
 import { rehypeSections, type Tone } from '@/lib/sections'
 import { dropTeachLine, taskKey, taskKeys } from '@/lib/tasks'
@@ -125,15 +126,40 @@ function MdH2({ node, children, ...props }: ComponentProps<'h2'> & ExtraProps) {
   )
 }
 
-const MD_COMPONENTS: Components = { input: MdInput, li: MdLi, a: MdLink, h2: MdH2 }
+function MdTd({ node, children, ...props }: ComponentProps<'td'> & ExtraProps) {
+  const bar = node?.properties?.dataBar as number | undefined
+  return (
+    <TableCell {...props}>
+      {bar === undefined ? children : (
+        <span className="md-bar-cell">
+          <span className="md-bar" aria-hidden><span style={{ width: `${bar}%` }} /></span>
+          <span>{children}</span>
+        </span>
+      )}
+    </TableCell>
+  )
+}
+
+const MD_COMPONENTS: Components = {
+  input: MdInput,
+  li: MdLi,
+  a: MdLink,
+  h2: MdH2,
+  table: ({ node: _node, ...props }) => <div className="md-table not-prose"><Table {...props} /></div>,
+  thead: ({ node: _node, ...props }) => <TableHeader {...props} />,
+  tbody: ({ node: _node, ...props }) => <TableBody {...props} />,
+  tr: ({ node: _node, ...props }) => <TableRow {...props} />,
+  th: ({ node: _node, ...props }) => <TableHead {...props} />,
+  td: MdTd,
+}
 
 function Markdown({ text, tasks }: { text: string; tasks?: Tasks }) {
   const lines = text.split('\n')
   return (
     <article className="md-doc prose prose-neutral max-w-none dark:prose-invert">
       <MdContext value={{ tasks, lines }}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr, rehypeSections]} components={MD_COMPONENTS}>
-          {linkCites(text)}
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr, rehypeTables, rehypeSections]} components={MD_COMPONENTS}>
+          {linkCites(repairBold(text))}
         </ReactMarkdown>
       </MdContext>
     </article>

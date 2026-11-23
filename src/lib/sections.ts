@@ -33,5 +33,11 @@ export const rehypeSections = () => (tree: HastNode) => {
     } else if (section) section.children!.push(node)
     else out.push(node)
   }
+  // 區塊已經是卡片，AI 放在章節結尾的分隔線只會多出一條線
+  for (const s of out) {
+    if (s.tagName !== 'section') continue
+    const isTail = (n?: HastNode) => n?.tagName === 'hr' || (n?.type === 'text' && !n.value?.trim())
+    while (isTail(s.children!.at(-1))) s.children!.pop()
+  }
   tree.children = out
 }
