@@ -72,3 +72,15 @@
 @keyframes card-fade {
   from { opacity: 0; }
 }
+
+.feed-shift {
+  animation: feed-shift 300ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes feed-shift {
+  from { transform: translateY(-3.5rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-shift { animation: card-fade 200ms ease-out; }
+}

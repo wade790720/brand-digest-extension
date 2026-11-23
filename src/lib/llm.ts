@@ -165,6 +165,13 @@ async function pace(p: Provider, chars: number, onWait?: (msg: string) => void, 
   log.splice(0, log.length, ...log.filter((x) => Date.now() - x.at < 60_000), { at: Date.now(), tokens: need })
 }
 
+export function minuteUsage(p: Provider, now = Date.now()) {
+  const cap = TPM[p]
+  if (!cap) return null
+  const recent = (sentLog[p] ?? []).filter((x) => now - x.at < 60_000)
+  return { used: recent.reduce((n, x) => n + x.tokens, 0), cap, freesInMs: recent.length ? recent[0].at + 60_000 - now : 0 }
+}
+
 export const resetPacing = () => Object.keys(sentLog).forEach((k) => delete sentLog[k as Provider])
 
 export async function generate(s: Settings, system: string, user: string,
@@ -180,7 +187,7 @@ export async function generate(s: Settings, system: string, user: string,
 }
 
 // 兩個 Whisper 模型的額度分開算：turbo 用完就換 large-v3
-const WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3']
+export const WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3']
 
 export async function transcribe(s: Settings, audio: Blob, onWait?: (msg: string) => void, signal?: AbortSignal): Promise<string> {
   const key = s.keys.groq

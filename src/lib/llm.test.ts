@@ -7,7 +7,7 @@ vi.mock('@/lib/store', () => ({
   getModelStatus: async () => status,
   setModelStatus: async (k: string, state: ModelStatus['state']) => void (status[k] = { state, at: Date.now() }),
 }))
-const { generate, LlmError, resetPacing, waitNeeded } = await import('./llm')
+const { generate, LlmError, minuteUsage, resetPacing, waitNeeded } = await import('./llm')
 const { setLang } = await import('./i18n')
 setLang('zh-TW')
 
@@ -25,6 +25,17 @@ beforeEach(() => {
     if (outOfQuota.includes(model)) return new Response('Rate limit reached on tokens per day (TPD)', { status: 429 })
     return new Response(JSON.stringify({ choices: [{ message: { content: `ok-${model}` } }] }))
   })
+})
+
+it('這一分鐘的用量：送出後累計，一分鐘後歸零；沒有分鐘上限的供應商不顯示', async () => {
+  expect(minuteUsage('groq')).toEqual({ used: 0, cap: 7000, freesInMs: 0 })
+  await generate(settings, 'sys', 'user')
+  const now = Date.now()
+  const u = minuteUsage('groq', now)!
+  expect(u.used).toBe(Math.round('sysuser'.length * 1.2) + 1000)
+  expect(u.freesInMs).toBeGreaterThan(0)
+  expect(minuteUsage('groq', now + 61_000)!.used).toBe(0)
+  expect(minuteUsage('openai')).toBeNull()
 })
 
 it('額度用完自動換同一家的下一個模型，之後直接跳過用完的', async () => {

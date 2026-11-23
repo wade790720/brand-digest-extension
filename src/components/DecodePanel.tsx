@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { WALL, decodeState, hookOf, windowStart } from '@/lib/decode'
+import { FEED, WALL, decodeState, hookOf, windowStart } from '@/lib/decode'
 import { getLang, hookTypeLabel, t, valueLabel } from '@/lib/i18n'
 import { HOOK_TYPES } from '@/lib/prompts'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,30 @@ function Thumb({ post, lit, className }: { post: Post; lit: boolean; className?:
   if (post.thumb && !broken)
     return <img src={post.thumb} alt="" onError={() => setBroken(true)} className={cn(base, 'outline -outline-offset-1 outline-black/10 dark:outline-white/10', !lit && 'opacity-30 grayscale')} />
   return <div className={cn(base, 'bg-muted')} style={lit ? { background: `color-mix(in oklab, var(--primary) ${shade(post.code)}%, var(--muted))` } : undefined} />
+}
+
+/** 新的一則從上面推進來。列高固定，動畫開始時畫面和上一刻完全相同 */
+function Feed({ posts }: { posts: Post[] }) {
+  if (!posts.length) return null
+  return (
+    <div className="min-w-0 space-y-2 md:col-start-1 md:row-start-2">
+      <p className="text-sm font-medium">{t('decode.recent')}</p>
+      <div className="overflow-hidden rounded-[calc(var(--radius-sm)+0.5rem+1px)] border" style={{ height: `calc(${Math.min(posts.length, FEED) * 3.5}rem + 2px)` }}>
+        <ol key={posts[0].code} className="feed-shift">
+          {posts.map((p, i) => {
+            const hook = hookOf(p)
+            return (
+              <li key={p.code} aria-hidden={i >= FEED || undefined} className="flex h-14 items-center gap-3 border-t px-2 first:border-t-0">
+                <Thumb post={p} lit className="size-10 shrink-0 rounded-sm" />
+                <p className="min-w-0 flex-1 truncate text-sm" title={p.digest!.topic}>{p.digest!.topic}</p>
+                {hook && <Badge variant="secondary" className="hidden shrink-0 sm:inline-flex">{hookTypeLabel(hook)}</Badge>}
+              </li>
+            )
+          })}
+        </ol>
+      </div>
+    </div>
+  )
 }
 
 export function DecodePanel({ handle, posts, current, startedAt, live = true, note, children }: {
@@ -56,7 +80,7 @@ export function DecodePanel({ handle, posts, current, startedAt, live = true, no
         ))}
       </dl>
 
-      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_16rem]">
+      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_16rem] md:grid-rows-[auto_1fr]">
         <div className="space-y-2" aria-hidden>
           <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
             {wall.map((p, k) => {
@@ -77,7 +101,7 @@ export function DecodePanel({ handle, posts, current, startedAt, live = true, no
         </div>
 
         {s.latest && d ? (
-          <div key={s.latest.code} className="essence-card space-y-3">
+          <div key={s.latest.code} className="essence-card space-y-3 md:col-start-2 md:row-span-2 md:row-start-1">
             <Thumb post={s.latest} lit className="aspect-[3/4] w-full rounded-xl" />
             <p className="text-xs text-muted-foreground">{t('decode.latest')}</p>
             <blockquote className="line-clamp-4 border-l-2 border-primary pl-3 text-lg font-medium leading-snug">{quote}</blockquote>
@@ -90,10 +114,11 @@ export function DecodePanel({ handle, posts, current, startedAt, live = true, no
             </div>
           </div>
         ) : (
-          <div className="flex aspect-[3/4] items-center justify-center rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+          <div className="flex aspect-[3/4] items-center justify-center self-start rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground md:col-start-2 md:row-span-2 md:row-start-1">
             {t('decode.waiting')}
           </div>
         )}
+        <Feed posts={s.recent} />
       </div>
 
       <div className="space-y-2">

@@ -1,8 +1,8 @@
 import { Download, ExternalLink, Upload } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { QuotaPanel, StatusBadge } from '@/components/QuotaPanel'
 import { ReportProblem } from '@/components/ReportProblem'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -26,18 +26,6 @@ const KEY_LINKS: Record<Provider, string> = {
 }
 
 const CUSTOM = '__custom'
-const DAY = 24 * 60 * 60 * 1000
-
-// ponytail: 額度一律當 24 小時後恢復。Groq 是滾動 24 小時，Gemini 是太平洋時間午夜重置（通常更早）
-function StatusBadge({ st }: { st?: ModelStatus }) {
-  if (st?.state === 'ok') return <Badge variant="outline">{t('settings.statusOk')}</Badge>
-  if (st?.state === 'missing') return <Badge variant="destructive">{t('settings.statusMissing')}</Badge>
-  if (st?.state === 'quota' && Date.now() - st.at < DAY) {
-    const back = new Date(st.at + DAY).toLocaleString(getLang(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    return <Badge variant="destructive">{t('settings.statusQuota', { time: back })}</Badge>
-  }
-  return <Badge variant="secondary">{t('settings.statusNew')}</Badge>
-}
 
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [s, setS] = useState<Settings>(DEFAULT_SETTINGS)
@@ -162,6 +150,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           )}
           <p className="text-xs text-muted-foreground">{t('settings.modelHelp', { model: DEFAULT_SETTINGS.models[s.provider] })}</p>
         </div>
+
+        <Separator />
+
+        <QuotaPanel provider={s.provider} models={options} status={status} />
 
         <Separator />
 

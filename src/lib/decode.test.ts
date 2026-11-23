@@ -20,6 +20,14 @@ it('拆解畫面：current 前面算處理過，只數成功的；用完成時�
   expect(decodeState(posts, undefined, 0).processed).toBe(5)
 })
 
+it('更早拆完的清單：新的在前、不含最新那則，多留一則給動畫', () => {
+  const posts = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((c, i) => done(c, (i + 1) * 100))
+  const s = decodeState(posts, undefined, 0)
+  expect(s.latest?.code).toBe('g')
+  expect(s.recent.map((p) => p.code)).toEqual(['f', 'e', 'd', 'c', 'b'])
+  expect(decodeState([done('a', 1)], undefined, 0).recent).toEqual([])
+})
+
 it('萃取結果的開場類型：被翻譯算其他，沒給就不帶', () => {
   expect(toDigest({ hookType: '痛點' }).hookType).toBe('痛點')
   expect(toDigest({ hookType: 'Question' }).hookType).toBe('其他')
