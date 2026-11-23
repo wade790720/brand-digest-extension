@@ -42,7 +42,7 @@ describe('飽和度', () => {
     expect(saturation([300, 200, 100], m)).toEqual([2, 3, 3])
   })
   it('說明前幾則涵蓋 80%', () => {
-    expect(saturationNote([2, 3, 3])).toBe('_飽和度：依發文時間，前 2 則（66%）就涵蓋了 80% 的觀念；全部 3 則共 3 個觀念。_')
+    expect(saturationNote([2, 3, 3])).toBe('_飽和度：依發文時間，前 2 則（66%）就涵蓋了 80% 的觀念，全部 3 則共 3 個觀念。_')
     expect(saturationNote([0, 0])).toBe('')
   })
 })
