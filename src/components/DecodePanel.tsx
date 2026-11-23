@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { FEED, WALL, decodeState, hookOf, windowStart } from '@/lib/decode'
 import { getLang, hookTypeLabel, t, valueLabel } from '@/lib/i18n'
@@ -6,7 +6,7 @@ import { HOOK_TYPES } from '@/lib/prompts'
 import { cn } from '@/lib/utils'
 import type { Post } from '@/types'
 
-const VALUE = { 高: 'default', 中: 'secondary', 低: 'outline' } as const
+const LEVEL = { 高: 3, 中: 2, 低: 1 } as const
 
 const shade = (code: string) => 10 + ([...code].reduce((h, c) => h * 31 + c.charCodeAt(0), 7) >>> 0) % 16
 
@@ -16,6 +16,25 @@ function Thumb({ post, lit, className }: { post: Post; lit: boolean; className?:
   if (post.thumb && !broken)
     return <img src={post.thumb} alt="" onError={() => setBroken(true)} className={cn(base, 'outline -outline-offset-1 outline-black/10 dark:outline-white/10', !lit && 'opacity-30 grayscale')} />
   return <div className={cn(base, 'bg-muted')} style={lit ? { background: `color-mix(in oklab, var(--foreground) ${shade(post.code)}%, var(--muted))` } : undefined} />
+}
+
+function Meta({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-h-9 items-center justify-between gap-3 border-t">
+      <dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
+      <dd className="flex min-w-0 items-center gap-2 text-sm font-medium tabular-nums"><span className="truncate">{children}</span></dd>
+    </div>
+  )
+}
+
+function ValueBars({ level }: { level: number }) {
+  return (
+    <span className="me-2 inline-flex h-3 items-end gap-0.5 align-[-1px]" aria-hidden>
+      {[1, 2, 3].map((n) => (
+        <span key={n} className={cn('w-1 rounded-full', n <= level ? 'bg-[var(--tone-key)]' : 'bg-row-active')} style={{ height: `${n * 33.34}%` }} />
+      ))}
+    </span>
+  )
 }
 
 /** 新的一則從上面推進來。列高固定，動畫開始時畫面和上一刻完全相同 */
@@ -87,7 +106,9 @@ export function DecodePanel({ handle, posts, current, startedAt, live = true, no
               const i = start + k
               return (
                 <div key={p.code} className={cn('relative rounded-md', p.code === current && 'ring-2 ring-primary ring-offset-2 ring-offset-background')}>
-                  <Thumb post={p} lit={i < s.processed && p.status === 'done'} className="aspect-[9/16] w-full rounded-md" />
+                  {i < s.processed
+                    ? <Thumb post={p} lit={p.status === 'done'} className="thumb-in aspect-[9/16] w-full rounded-md" />
+                    : <span className="skeleton skeleton-reel block aspect-[9/16] w-full rounded-md" style={{ '--skeleton-i': k } as CSSProperties} />}
                   {i < s.processed && p.status === 'error' && <span className="absolute inset-x-1 bottom-1 h-0.5 rounded-full bg-destructive" />}
                 </div>
               )
@@ -105,17 +126,22 @@ export function DecodePanel({ handle, posts, current, startedAt, live = true, no
             <Thumb post={s.latest} lit className="aspect-[3/4] w-full rounded-xl" />
             <p className="text-xs text-muted-foreground">{t('decode.latest')}</p>
             <blockquote className="line-clamp-4 border-l-2 border-[var(--tone-key)] pl-3 text-lg font-medium leading-snug">{quote}</blockquote>
-            <div className="flex flex-wrap gap-1.5">
-              {quote !== d.topic && <Badge variant="outline" className="max-w-full truncate">{d.topic}</Badge>}
-              <Badge variant={VALUE[d.value]}>{t('cv.value', { v: valueLabel(d.value) })}</Badge>
-              {hook && <Badge variant="secondary">{hookTypeLabel(hook)}</Badge>}
-              {s.latest.stats?.plays !== undefined && <Badge variant="outline">{t('decode.plays', { n: num.format(s.latest.stats.plays) })}</Badge>}
-              {s.latest.stats?.likes !== undefined && <Badge variant="outline">{t('decode.likes', { n: num.format(s.latest.stats.likes) })}</Badge>}
-            </div>
+            {quote !== d.topic && <p className="line-clamp-2 text-sm text-text-secondary" title={d.topic}>{d.topic}</p>}
+            <dl>
+              <Meta label={t('decode.metaValue')}><ValueBars level={LEVEL[d.value]} />{valueLabel(d.value)}</Meta>
+              {hook && <Meta label={t('decode.metaHook')}>{hookTypeLabel(hook)}</Meta>}
+              {s.latest.stats?.plays !== undefined && <Meta label={t('decode.metaPlays')}>{num.format(s.latest.stats.plays)}</Meta>}
+              {s.latest.stats?.likes !== undefined && <Meta label={t('decode.metaLikes')}>{num.format(s.latest.stats.likes)}</Meta>}
+            </dl>
           </div>
         ) : (
-          <div className="flex aspect-[3/4] items-center justify-center self-start rounded-xl border border-dashed border-line-strong p-4 text-center text-sm text-muted-foreground md:col-start-2 md:row-span-2 md:row-start-1">
-            {t('decode.waiting')}
+          <div className="space-y-3 self-start md:col-start-2 md:row-span-2 md:row-start-1">
+            <div className="skeleton aspect-[3/4] w-full rounded-xl" aria-hidden />
+            <p className="text-xs text-muted-foreground">{t('decode.waiting')}</p>
+            <div className="space-y-2" aria-hidden>
+              <div className="skeleton h-5 w-full rounded-md" />
+              <div className="skeleton h-5 w-2/3 rounded-md" />
+            </div>
           </div>
         )}
         <Feed posts={s.recent} />

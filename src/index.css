@@ -397,3 +397,25 @@
   transition: background-color 120ms var(--ease-ui), color 120ms var(--ease-ui);
 }
 @media (hover: hover) { .md-cite:hover { background: color-mix(in oklab, var(--tone) 28%, transparent); color: var(--foreground); } }
+
+/* 等待中的內容。光帶一格接一格掃過，整面縮圖牆看起來是同一道波 */
+.skeleton { position: relative; overflow: hidden; background-color: var(--muted); }
+.skeleton::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--foreground) 9%, transparent), transparent);
+  animation: skeleton-sweep 1.6s linear infinite;
+  animation-delay: calc(var(--skeleton-i, 0) * 70ms - 1.6s);
+}
+.skeleton-reel::before {
+  content: ""; position: absolute; inset: auto 12% 8%; height: 0.875rem;
+  background:
+    linear-gradient(var(--skeleton-line), var(--skeleton-line)) 0 0 / 76% 0.25rem no-repeat,
+    linear-gradient(var(--skeleton-line), var(--skeleton-line)) 0 100% / 48% 0.25rem no-repeat;
+  --skeleton-line: color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+@keyframes skeleton-sweep { to { transform: translateX(100%); } }
+.thumb-in { animation: card-fade 300ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { display: none; }
+  .thumb-in { animation: none; }
+}
