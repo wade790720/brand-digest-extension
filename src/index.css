@@ -52,6 +52,18 @@
   }
 }
 
+/* tw-animate-css 沒有處理「減少動態」：系統開啟時，對話框和選單只淡入淡出，不縮放、不滑動 */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    --tw-enter-scale: 1 !important;
+    --tw-exit-scale: 1 !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+  }
+}
+
 /* 萃取時翻出的精華卡：每張新卡像翻牌一樣轉正 */
 .essence-card {
   animation: card-flip 500ms cubic-bezier(0.2, 0.7, 0.2, 1) both;

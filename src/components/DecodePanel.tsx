@@ -15,7 +15,7 @@ function Thumb({ post, lit, className }: { post: Post; lit: boolean; className?:
   const [broken, setBroken] = useState(false)
   const base = cn('object-cover motion-safe:transition-[opacity,filter,background-color] motion-safe:duration-500', className)
   if (post.thumb && !broken)
-    return <img src={post.thumb} alt="" onError={() => setBroken(true)} className={cn(base, !lit && 'opacity-30 grayscale')} />
+    return <img src={post.thumb} alt="" onError={() => setBroken(true)} className={cn(base, 'outline -outline-offset-1 outline-black/10 dark:outline-white/10', !lit && 'opacity-30 grayscale')} />
   return <div className={cn(base, 'bg-muted')} style={lit ? { background: `color-mix(in oklab, var(--primary) ${shade(post.code)}%, var(--muted))` } : undefined} />
 }
 
@@ -107,7 +107,7 @@ export function DecodePanel({ handle, posts, current, startedAt, live = true, no
           {HOOK_TYPES.map((h) => {
             const n = hooks.get(h) ?? 0
             return (
-              <li key={h} className={cn('rounded-lg border px-2 py-2 text-center', h === top && 'border-primary', !n && 'opacity-50')}>
+              <li key={h} className={cn('rounded-lg border px-2 py-2 text-center', h === top && 'border-primary')}>
                 <p className={cn('text-2xl font-semibold tabular-nums', h === top && 'text-[var(--primary-text)]')}>{n}</p>
                 <p className="truncate text-xs text-muted-foreground">{hookTypeLabel(h)}</p>
               </li>

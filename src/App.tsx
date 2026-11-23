@@ -96,8 +96,9 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <aside className="flex w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
+    <div className="flex h-screen flex-col bg-background text-foreground md:flex-row">
+      {/* 窄螢幕時側邊欄移到上方、限制高度，主畫面才不會被擠到只剩一條 */}
+      <aside className="flex max-h-[40vh] w-full shrink-0 flex-col border-b bg-sidebar text-sidebar-foreground md:max-h-none md:w-60 md:border-r md:border-b-0">
         <button className="flex h-12 items-center gap-2 px-3 text-left" onClick={() => setSelected(null)}>
           <img src="/icons/icon-48.png" alt="" className="size-6 rounded-md" />
           <span className="font-semibold text-foreground">{t('app.shortName')}</span>

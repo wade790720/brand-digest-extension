@@ -75,7 +75,7 @@ export function Welcome({ creators, onSelect }: { creators: Creator[]; onSelect:
 
   const state = (done: boolean, ready: boolean) => (done ? 'done' : ready ? 'now' : 'later') as 'done' | 'now' | 'later'
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-8">
+    <div className="mx-auto max-w-2xl space-y-6 p-4 sm:p-8">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">{t('welcome.title')}</h1>
         <p className="text-muted-foreground">

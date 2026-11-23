@@ -77,12 +77,13 @@ function show(lang: Lang, title: string, body: string, buttons: { label: string;
     .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
     .row:empty { display: none; }
     button { font: inherit; font-weight: 600; padding: 6px 14px; border-radius: 8px; cursor: pointer;
-      border: 1px solid rgb(255 255 255 / 15%); background: transparent; color: #fafafa; }
+      border: 1px solid rgb(255 255 255 / 15%); background: transparent; color: #fafafa; transition: filter 150ms ease-out; }
     button.primary { background: var(--primary); border-color: var(--primary); }
-    button:hover { filter: brightness(1.15); }
+    /* 只在滑鼠這類能 hover 的裝置變亮：觸控點過之後才不會一直亮著 */
+    @media (hover: hover) { button:hover { filter: brightness(1.15); } }
     button:focus-visible { outline: 2px solid var(--primary-text); outline-offset: 2px; }
   </style>
-  <div class="box" role="region" aria-live="polite">
+  <div class="box" role="region">
     <div class="brand"></div>
     <p class="title"></p>
     <p class="body"></p>
@@ -100,6 +101,21 @@ function show(lang: Lang, title: string, body: string, buttons: { label: string;
     root.querySelector('.row')!.append(el)
   }
   document.body.append(toast)
+  announce(`${title} ${body}`)
+}
+
+// 螢幕閱讀器播報：區塊先放進頁面、稍後才填文字才會被念出來；帶著文字一起插入的常常不念
+let live: HTMLElement | null = null
+function announce(text: string) {
+  if (!live?.isConnected) {
+    live = document.createElement('div')
+    live.setAttribute('role', 'status')
+    live.style.cssText = 'position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap'
+    document.body.append(live)
+  }
+  const el = live
+  el.textContent = ''
+  setTimeout(() => (el.textContent = text), 100)
 }
 
 function hide() {

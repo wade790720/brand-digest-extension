@@ -11,7 +11,15 @@ captureErrors('brand-digest')
 
 // 跟著系統切換深色模式（shadcn 的主題用 .dark class）
 const dark = window.matchMedia('(prefers-color-scheme: dark)')
-const applyTheme = () => document.documentElement.classList.toggle('dark', dark.matches)
+// 切換時先暫停轉場：不然所有有顏色轉場的元素會同時漸變，拖出殘影
+const applyTheme = () => {
+  const pause = document.createElement('style')
+  pause.textContent = '*, *::before, *::after { transition: none !important }'
+  document.head.append(pause)
+  document.documentElement.classList.toggle('dark', dark.matches)
+  void getComputedStyle(document.documentElement).color // 先套用新顏色，下一格畫面再恢復轉場
+  requestAnimationFrame(() => pause.remove())
+}
 applyTheme()
 dark.addEventListener('change', applyTheme)
 

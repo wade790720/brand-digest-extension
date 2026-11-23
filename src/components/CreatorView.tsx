@@ -106,7 +106,7 @@ const MD_COMPONENTS: Components = { input: MdInput, li: MdLi, a: MdLink }
 function Markdown({ text, tasks }: { text: string; tasks?: Tasks }) {
   const lines = text.split('\n') // linkCites 不改行數，所以能用行號對回原文
   return (
-    <article className="prose prose-neutral max-w-none dark:prose-invert">
+    <article className="prose prose-neutral max-w-none dark:prose-invert [:lang(en)_&]:max-w-[70ch]">
       <MdContext value={{ tasks, lines }}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr]} components={MD_COMPONENTS}>
           {linkCites(text)}
@@ -138,6 +138,9 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   const [clubDismissed, setClubDismissed] = useState(true) // 讀到設定前先不顯示，免得閃一下
 
   // 一次讀完、一起更新：只重畫一次。兩次讀取重疊時，只用最後開始的那次，舊的結果晚到也不會蓋掉新的
+  // 換主播時焦點移到標題：螢幕閱讀器使用者才知道右邊換了內容（每位主播的頁面都重新掛載）
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  useEffect(() => titleRef.current?.focus(), [])
   const loadId = useRef(0)
   const load = useCallback(async () => {
     const id = ++loadId.current
@@ -217,10 +220,10 @@ export function CreatorView({ creator, run, stopReason, onRetry, onDelete, onSta
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-8">
+    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-8">
       <header className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold">{creator.name}</h1>
+          <h1 ref={titleRef} tabIndex={-1} className="text-2xl font-semibold">{creator.name}</h1>
           <p className="text-sm text-muted-foreground">
             {creator.fullName && `${creator.fullName} · `}
             <a className="inline-flex items-center gap-1 underline-offset-4 hover:underline"
