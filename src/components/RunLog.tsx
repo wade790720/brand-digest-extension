@@ -50,10 +50,10 @@ export function LogToggle({ log, startedAt }: { log: LogEntry[]; startedAt: numb
 /** 停下時的說明：停在哪一則、哪一步、為什麼，停下前自動等了幾次，可以從這裡繼續 */
 export function StopDetail({ stopped, onRetry, busy }: { stopped: Stopped; onRetry: () => void; busy: boolean }) {
   const { where, log } = stopped
-  const waits = where?.code ? log.filter((e) => e.level === 'warn' && e.code === where.code).length : 0
+  const waits = where?.code ? log.filter((e) => e.level === 'warn' && e.code === where.code && e.text !== stopped.reason).length : 0
   return (
-    <section role="alert" className="tile space-y-3 rounded-xl border-destructive/40! p-4">
-      <p className="font-medium text-destructive">{t('cv.stopped')}</p>
+    <section role={stopped.waiting ? 'status' : 'alert'} className={cn('tile space-y-3 rounded-xl p-4', !stopped.waiting && 'border-destructive/40!')}>
+      <p className={cn('font-medium', !stopped.waiting && 'text-destructive')}>{t(stopped.waiting ? 'cv.paused' : 'cv.stopped')}</p>
       {where?.step && (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-medium">
           {where.index ? t('stop.where', { i: where.index, step: stepLabel(where.step) }) : stepLabel(where.step)}

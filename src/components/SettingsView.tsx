@@ -8,8 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { browserLang, getLang, resolveLang, setLang, t, type LangSetting } from '@/lib/i18n'
 import { CLUB_URL } from '@/lib/links'
-import { PROVIDER_NAMES } from '@/lib/llm'
-import { DEFAULT_SETTINGS, MODEL_OPTIONS, exportAll, getModelStatus, getSettings, importAll, saveSettings } from '@/lib/store'
+import { PROVIDER_NAMES, listModels } from '@/lib/llm'
+import { DEFAULT_SETTINGS, MODEL_OPTIONS, exportAll, getModelLists, getModelStatus, getSettings, importAll, saveModelList, saveSettings, type ModelLists } from '@/lib/store'
 import { cn, download } from '@/lib/utils'
 import type { ModelStatus, Provider, Settings } from '@/types'
 
@@ -56,17 +56,33 @@ export function SettingsView() {
   const [saved, setSaved] = useState<Settings>(DEFAULT_SETTINGS)
   const [status, setStatus] = useState<Record<string, ModelStatus>>({})
   const [custom, setCustom] = useState(false)
+  const [lists, setLists] = useState<ModelLists>({})
   const fileRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     getSettings().then((v) => (setS(v), setSaved(v)))
     getModelStatus().then(setStatus)
   }, [])
 
+  const savedKey = saved.keys[s.provider]
+  useEffect(() => {
+    const ctrl = new AbortController()
+    getModelLists().then(setLists)
+    if (savedKey) listModels(s.provider, savedKey, ctrl.signal).then(async (models) => {
+      if (!models || ctrl.signal.aborted) return
+      await saveModelList(s.provider, models)
+      setLists(await getModelLists())
+    })
+    return () => ctrl.abort()
+  }, [s.provider, savedKey])
+
   const dirty = form(s) !== form(saved)
   const setKey = (p: Provider, v: string) => setS({ ...s, keys: { ...s.keys, [p]: v.trim() } })
   const setModel = (v: string) => setS({ ...s, models: { ...s.models, [s.provider]: v.trim() } })
   const model = s.models[s.provider]
-  const options = [...new Set([...MODEL_OPTIONS[s.provider], ...(model && !custom ? [model] : [])])]
+  const live = lists[s.provider]?.models ?? []
+  // 建議的模型排前面，其他照名稱；目前選的就算不在清單上也留著
+  const options = [...new Set([...MODEL_OPTIONS[s.provider].filter((m) => !live.length || live.includes(m)), ...live, ...(model && !custom ? [model] : [])])]
+  const watched = options.filter((m) => MODEL_OPTIONS[s.provider].includes(m) || m === model || status[`${s.provider}:${m}`])
 
   async function exportBackup() {
     const day = new Date().toLocaleDateString('sv') // YYYY-MM-DD
@@ -151,7 +167,7 @@ export function SettingsView() {
       </Panel>
 
       <Panel title={t('quota.title')} help={t('quota.help')}>
-        <QuotaRows provider={s.provider} models={options} status={status} />
+        <QuotaRows provider={s.provider} models={watched} status={status} />
       </Panel>
 
       <Panel title={t('settings.sectionGeneral')} help={t('settings.generalHelp')}>

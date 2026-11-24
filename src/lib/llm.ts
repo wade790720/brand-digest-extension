@@ -1,5 +1,5 @@
 import { t } from '@/lib/i18n'
-import { MODEL_OPTIONS, getModelStatus, setModelStatus } from '@/lib/store'
+import { MODEL_OPTIONS, getModelLists, getModelStatus, setModelStatus } from '@/lib/store'
 import type { Provider, Settings } from '@/types'
 
 export class LlmError extends Error {
@@ -12,6 +12,11 @@ export class LlmError extends Error {
   }
 
   /** 下一則多半也會一樣失敗：停下整批，免得白白消耗每日額度。rate、overload 到呼叫端時已經重試過了 */
+  /** 額度用完、限流、供應商忙：不是設定錯，等一下或明天再繼續就好 */
+  get isWait() {
+    return ['quota', 'rate', 'overload'].includes(this.kind)
+  }
+
   get isFatal() {
     return ['auth', 'quota', 'model', 'rate', 'overload'].includes(this.kind)
   }
@@ -95,6 +100,13 @@ const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((ok, fail)
 const DAY = 24 * 60 * 60 * 1000
 
 /** ponytail: 只換同一家的模型。換供應商的話，每批送多少字（inputBudget）也要跟著變，做到一半換會出錯。 */
+/** 下架的模型不要拿來接手：知道金鑰能用哪些模型時，只留清單上的；內建的全都下架了，就改用清單前幾個 */
+export function fallbackPool(builtIn: string[], live?: string[]) {
+  if (!live) return builtIn
+  const known = builtIn.filter((m) => live.includes(m))
+  return known.length ? known : live.slice(0, 3)
+}
+
 async function candidates(prefix: string, preferred: string, others: string[]) {
   const st = await getModelStatus()
   const out = (m: string) => {
@@ -177,7 +189,7 @@ export const resetPacing = () => Object.keys(sentLog).forEach((k) => delete sent
 export async function generate(s: Settings, system: string, user: string,
   opts: { json?: boolean; onWait?: (msg: string) => void; signal?: AbortSignal } = {}) {
   const p = s.provider
-  const models = await candidates(p, s.models[p], MODEL_OPTIONS[p])
+  const models = await candidates(p, s.models[p], fallbackPool(MODEL_OPTIONS[p], (await getModelLists())[p]?.models))
   const exhausted = t('llm.allUsed', { name: PROVIDER_NAMES[p] })
   return withFallback(p, models, exhausted, opts.onWait, (model) =>
     retryRate(async () => {
@@ -224,6 +236,33 @@ export function parseJson(raw: string): any {
     } catch {}
   }
   return null
+}
+
+const USABLE: Record<Provider, (id: string) => boolean> = {
+  groq: (id) => !/whisper|guard|tts|playai|orpheus|distil|compound/i.test(id),
+  openai: (id) => /^(gpt-|o\d)/.test(id) && !/audio|realtime|image|search|transcribe|tts|instruct|embedding/.test(id),
+  gemini: (id) => /^gemini-[\d.]+-flash/.test(id) && !/image|tts|live|audio|embedding/.test(id),
+  anthropic: (id) => id.startsWith('claude-'),
+}
+
+/** 向供應商讀這把金鑰能用的對話模型；讀不到回傳 null，畫面改用內建清單 */
+export async function listModels(p: Provider, key: string, signal?: AbortSignal): Promise<string[] | null> {
+  const req: Record<Provider, [string, Record<string, string>]> = {
+    groq: ['https://api.groq.com/openai/v1/models', { authorization: `Bearer ${key}` }],
+    openai: ['https://api.openai.com/v1/models', { authorization: `Bearer ${key}` }],
+    gemini: ['https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { 'x-goog-api-key': key }],
+    anthropic: ['https://api.anthropic.com/v1/models?limit=100', { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }],
+  }
+  try {
+    const res = await fetch(req[p][0], { headers: req[p][1], signal })
+    if (!res.ok) return null
+    const body = await res.json()
+    const ids: string[] = (body.data ?? body.models ?? []).map((m: { id?: string; name?: string }) => String(m.id ?? m.name ?? '').replace(/^models\//, ''))
+    const models = [...new Set(ids.filter(USABLE[p]))].sort()
+    return models.length ? models : null
+  } catch {
+    return null
+  }
 }
 
 export async function checkGroqKey(key: string): Promise<string | null> {

@@ -117,6 +117,7 @@ export async function processCreator(creator: Creator, signal: AbortSignal, onPr
       if (signal.aborted) break
       if (e instanceof LlmError && e.isFatal) {
         fatal = e
+        report(i + 1, step(t('pipe.failed', { error: e.message })), undefined, { level: e.isWait ? 'warn' : 'error', text: e.message, code })
         break
       }
       p.status = 'error'

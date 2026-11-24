@@ -40,6 +40,8 @@ export interface Stopped {
   startedAt: number
   log: LogEntry[]
   where?: { step?: Step; index?: number; code?: string }
+  /** 額度或忙碌造成的暫停，不是錯誤 */
+  waiting?: boolean
 }
 
 export default function App() {
@@ -85,21 +87,29 @@ export default function App() {
     // 紀錄和最後一次進度放在這裡累積：停下時直接讀，不受 state 更新時機影響
     let log: LogEntry[] = []
     let last: Progress = { done: 0, total: 0, status: t('app.preparing') }
+    // 萃取失敗後還會先整合知識庫才停，停在哪一則要記失敗當下，不是最後一次進度
+    let step: Step | undefined
+    let failed: { text: string; where: NonNullable<Stopped['where']> } | undefined
     setRun({ creator: creator.name, progress: last, startedAt, log })
     try {
       await task(creator, ctrl.signal, (progress) => {
         if (progress.event) log = [...log, { ...progress.event, at: Date.now() }]
         last = progress
+        if (progress.step) step = progress.step
+        if (progress.event && progress.event.level !== 'info' && step)
+          failed = { text: progress.event.text, where: { step, index: progress.done, ...(progress.event.code && { code: progress.event.code }) } }
         setRun({ creator: creator.name, progress, startedAt, log })
       })
       if (!ctrl.signal.aborted) toast.success(doneMsg)
     } catch (e) {
       if (ctrl.signal.aborted) return
       const msg = e instanceof Error ? e.message : String(e)
-      toast.error(msg, { duration: 10000 })
-      log = [...log, { level: 'error', text: msg, code: last.current, at: Date.now() }]
-      const where = last.step && { step: last.step, ...(last.current && { index: last.done + 1, code: last.current }) }
-      setStopped({ creator: creator.name, reason: msg, startedAt, log, ...(where && { where }) })
+      const waiting = e instanceof LlmError && e.isWait
+      if (waiting) toast(msg, { duration: 10000 })
+      else toast.error(msg, { duration: 10000 })
+      if (failed?.text !== msg) log = [...log, { level: waiting ? 'warn' : 'error', text: msg, code: last.current, at: Date.now() }]
+      const where = failed?.text === msg ? failed.where : last.step && { step: last.step, ...(last.current && { index: last.done + 1, code: last.current }) }
+      setStopped({ creator: creator.name, reason: msg, startedAt, log, ...(where && { where }), ...(waiting && { waiting }) })
       if (e instanceof LlmError && (e.kind === 'auth' || e.kind === 'model')) setSettingsOpen(true)
     } finally {
       abort.current = null

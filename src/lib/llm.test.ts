@@ -5,9 +5,10 @@ const status: Record<string, ModelStatus> = {}
 vi.mock('@/lib/store', () => ({
   MODEL_OPTIONS: { groq: ['a', 'b'], gemini: [], openai: [], anthropic: [] },
   getModelStatus: async () => status,
+  getModelLists: async () => ({}),
   setModelStatus: async (k: string, state: ModelStatus['state']) => void (status[k] = { state, at: Date.now() }),
 }))
-const { generate, LlmError, minuteUsage, resetPacing, waitNeeded } = await import('./llm')
+const { fallbackPool, generate, listModels, LlmError, minuteUsage, resetPacing, waitNeeded } = await import('./llm')
 const { setLang } = await import('./i18n')
 setLang('zh-TW')
 
@@ -79,4 +80,23 @@ it('排隊：最近 60 秒加上這次超過上限，就等最舊的幾筆過期
 it('哪些錯誤要停下整批：金鑰、額度、模型、重試完仍限流或過載；格式錯和太長只跳過這一則', () => {
   for (const kind of ['auth', 'quota', 'model', 'rate', 'overload'] as const) expect(new LlmError('x', kind).isFatal).toBe(true)
   for (const kind of ['too_large', 'bad_json', 'other'] as const) expect(new LlmError('x', kind).isFatal).toBe(false)
+})
+
+it('接手的模型：只用金鑰清單上還在的；內建的全下架就用清單前幾個；讀不到清單照舊', () => {
+  expect(fallbackPool(['a', 'b', 'c'], ['c', 'a', 'z'])).toEqual(['a', 'c'])
+  expect(fallbackPool(['a', 'b'], ['x', 'y', 'z', 'w'])).toEqual(['x', 'y', 'z'])
+  expect(fallbackPool(['a', 'b'])).toEqual(['a', 'b'])
+})
+
+it('讀模型清單：只留對話模型、去掉語音和圖片模型；失敗回傳 null', async () => {
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ data: [
+    { id: 'openai/gpt-oss-120b' }, { id: 'whisper-large-v3' }, { id: 'meta-llama/llama-guard-4' }, { id: 'qwen/qwen3.8-27b' },
+  ] })))
+  expect(await listModels('groq', 'k')).toEqual(['openai/gpt-oss-120b', 'qwen/qwen3.8-27b'])
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ models: [
+    { name: 'models/gemini-3.8-flash' }, { name: 'models/gemini-3.8-pro' }, { name: 'models/gemini-3.5-flash-image' }, { name: 'models/text-embedding-5' },
+  ] })))
+  expect(await listModels('gemini', 'k')).toEqual(['gemini-3.8-flash'])
+  vi.stubGlobal('fetch', async () => new Response('no', { status: 401 }))
+  expect(await listModels('openai', 'k')).toBeNull()
 })

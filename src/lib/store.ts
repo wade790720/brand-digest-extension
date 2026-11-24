@@ -46,6 +46,17 @@ export const MODEL_OPTIONS: Record<Settings['provider'], string[]> = {
   anthropic: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5'],
 }
 
+export type ModelLists = Partial<Record<Settings['provider'], { at: number; models: string[] }>>
+
+/** 金鑰實際能用的模型，打開設定時向供應商讀一次 */
+export async function getModelLists(): Promise<ModelLists> {
+  return (await area.get(['modelLists'])).modelLists ?? {}
+}
+
+export async function saveModelList(provider: Settings['provider'], models: string[]) {
+  await area.set({ modelLists: { ...(await getModelLists()), [provider]: { at: Date.now(), models } } })
+}
+
 export async function getModelStatus(): Promise<Record<string, ModelStatus>> {
   return (await area.get(['modelStatus'])).modelStatus ?? {}
 }
