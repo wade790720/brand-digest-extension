@@ -40,3 +40,11 @@ it('要點開頭的標籤換成小標、整點上色；中英文都認得；認�
   expect(b.children[0].children?.[1]).toMatchObject({ value: '太早自動化' })
   expect(c.properties?.dataTone).toBeUndefined()
 })
+
+it('勾選項目開頭的標籤不轉成小標，免得小標跑到勾選框前面', () => {
+  const tree = { type: 'root', children: [{ type: 'element', tagName: 'li', children: [
+    { type: 'element', tagName: 'input', properties: { type: 'checkbox' }, children: [] }, { type: 'text', value: ' 照做｜刪一步' },
+  ] }] }
+  rehypePointTones()(tree as never)
+  expect((tree.children[0] as { properties?: object }).properties).toBeUndefined()
+})

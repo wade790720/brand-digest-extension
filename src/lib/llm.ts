@@ -11,12 +11,12 @@ export class LlmError extends Error {
     this.retryAfterSec = retryAfterSec
   }
 
-  /** 下一則多半也會一樣失敗：停下整批，免得白白消耗每日額度。rate、overload 到呼叫端時已經重試過了 */
   /** 額度用完、限流、供應商忙：不是設定錯，等一下或明天再繼續就好 */
   get isWait() {
     return ['quota', 'rate', 'overload'].includes(this.kind)
   }
 
+  /** 下一則多半也會一樣失敗：停下整批，免得白白消耗每日額度。rate、overload 到呼叫端時已經重試過了 */
   get isFatal() {
     return ['auth', 'quota', 'model', 'rate', 'overload'].includes(this.kind)
   }
@@ -99,7 +99,6 @@ const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((ok, fail)
 })
 const DAY = 24 * 60 * 60 * 1000
 
-/** ponytail: 只換同一家的模型。換供應商的話，每批送多少字（inputBudget）也要跟著變，做到一半換會出錯。 */
 /** 下架的模型不要拿來接手：知道金鑰能用哪些模型時，只留清單上的；內建的全都下架了，就改用清單前幾個 */
 export function fallbackPool(builtIn: string[], live?: string[]) {
   if (!live) return builtIn
@@ -107,6 +106,7 @@ export function fallbackPool(builtIn: string[], live?: string[]) {
   return known.length ? known : live.slice(0, 3)
 }
 
+/** ponytail: 只換同一家的模型。換供應商的話，每批送多少字（inputBudget）也要跟著變，做到一半換會出錯。 */
 async function candidates(prefix: string, preferred: string, others: string[]) {
   const st = await getModelStatus()
   const out = (m: string) => {
@@ -258,7 +258,7 @@ export async function listModels(p: Provider, key: string, signal?: AbortSignal)
     if (!res.ok) return null
     const body = await res.json()
     const ids: string[] = (body.data ?? body.models ?? []).map((m: { id?: string; name?: string }) => String(m.id ?? m.name ?? '').replace(/^models\//, ''))
-    const models = [...new Set(ids.filter(USABLE[p]))].sort()
+    const models = [...new Set(ids.filter(USABLE[p]))].sort().reverse() // 版本號大的排前面
     return models.length ? models : null
   } catch {
     return null

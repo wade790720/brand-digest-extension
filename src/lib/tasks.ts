@@ -1,7 +1,10 @@
+import { stripTag } from '@/lib/sections'
+
 const TASK = /^\s*[-*+] \[[ xX]\] (.+)$/
 
 export function taskKey(line: string | undefined): string | null {
-  return line?.match(TASK)?.[1].trim() ?? null
+  const m = line?.match(TASK)
+  return m ? stripTag(m[1]).trim() : null
 }
 
 export const taskKeys = (md: string) => [...new Set(md.split('\n').map(taskKey).filter((k): k is string => !!k))]
@@ -12,7 +15,7 @@ export function teachLine(md: string): string {
   if (start < 0) return ''
   const first = lines.slice(start + 1).find((l) => l.trim() && !l.startsWith('#'))
   if (first?.trimStart().startsWith('|')) return '' // 表格的一列不是一句話
-  return (first ?? '').replace(LIST_ITEM, '').replace(/\[\d+\]/g, '').replace(/\*\*/g, '').trim()
+  return stripTag((first ?? '').replace(LIST_ITEM, '')).replace(/\[\d+\]/g, '').replace(/\*\*/g, '').trim()
 }
 
 const LIST_ITEM = /^\s*([-*+]|\d+\.)\s+/

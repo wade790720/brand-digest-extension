@@ -96,7 +96,7 @@ export default function App() {
         if (progress.event) log = [...log, { ...progress.event, at: Date.now() }]
         last = progress
         if (progress.step) step = progress.step
-        if (progress.event && progress.event.level !== 'info' && step)
+        if (progress.event && progress.event.level !== 'info' && !progress.step && step)
           failed = { text: progress.event.text, where: { step, index: progress.done, ...(progress.event.code && { code: progress.event.code }) } }
         setRun({ creator: creator.name, progress, startedAt, log })
       })

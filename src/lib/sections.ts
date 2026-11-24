@@ -20,6 +20,12 @@ const POINT_TONES: Exclude<Tone, 'source'>[] = ['key', 'method', 'action', 'caut
 const byTag = new Map(POINT_TONES.flatMap((tone) => LANGS.map((l) => [t(`tone.${tone}`, {}, l), tone] as const)))
 const TAG = /^\s*([^｜|\s]{1,6})\s*[｜|]\s*/
 
+/** 去掉開頭認得的標籤（重點｜做法｜照做｜留意），其他「XX｜」照原樣 */
+export function stripTag(text: string) {
+  const m = text.match(TAG)
+  return m && byTag.has(m[1]) ? text.slice(m[0].length) : text
+}
+
 type HastNode = { type: string; tagName?: string; value?: string; properties?: Record<string, unknown>; children?: HastNode[] }
 
 const textOf = (n: HastNode): string => n.value ?? (n.children ?? []).map(textOf).join('')
@@ -29,7 +35,8 @@ export const rehypePointTones = () => (tree: HastNode) => {
   const firstText = (n: HastNode): HastNode | undefined =>
     n.type === 'text' && n.value?.trim() ? n : n.tagName === 'ul' || n.tagName === 'ol' ? undefined : (n.children ?? []).map(firstText).find(Boolean)
   const walk = (n: HastNode) => {
-    if (n.tagName === 'li') {
+    const checkbox = (n.children ?? []).find((c) => c.type === 'element')?.tagName === 'input'
+    if (n.tagName === 'li' && !checkbox) {
       const text = firstText(n)
       const m = text?.value?.match(TAG)
       const tone = m && byTag.get(m[1])

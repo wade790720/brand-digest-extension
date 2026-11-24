@@ -92,7 +92,7 @@ it('讀模型清單：只留對話模型、去掉語音和圖片模型；失敗�
   vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ data: [
     { id: 'openai/gpt-oss-120b' }, { id: 'whisper-large-v3' }, { id: 'meta-llama/llama-guard-4' }, { id: 'qwen/qwen3.8-27b' },
   ] })))
-  expect(await listModels('groq', 'k')).toEqual(['openai/gpt-oss-120b', 'qwen/qwen3.8-27b'])
+  expect(await listModels('groq', 'k')).toEqual(['qwen/qwen3.8-27b', 'openai/gpt-oss-120b'])
   vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ models: [
     { name: 'models/gemini-3.8-flash' }, { name: 'models/gemini-3.8-pro' }, { name: 'models/gemini-3.5-flash-image' }, { name: 'models/text-embedding-5' },
   ] })))

@@ -42,3 +42,9 @@ it('第一節是表格：儀表板不顯示那一句，知識庫照原樣', () =
   expect(teachLine(table)).toBe('')
   expect(dropTeachLine(table)).toBe(table)
 })
+
+it('模型多寫的「重點｜」標籤不會出現在儀表板那一句，也不會改變勾選項目的 key', () => {
+  expect(teachLine('## 教什麼\n\n- 重點｜**先刪再快** [1]')).toBe('先刪再快')
+  expect(taskKey('- [ ] 照做｜每週刪一件 [3]')).toBe('每週刪一件 [3]')
+  expect(taskKey('- [ ] 備註｜不是標籤')).toBe('備註｜不是標籤')
+})

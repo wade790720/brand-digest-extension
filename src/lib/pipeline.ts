@@ -213,8 +213,9 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
     const room = budget - md.length
     const missed = JSON.stringify(items.filter((it) => review.uncited.includes(it.n)))
     const withMissed = missed.length <= room
-    try {
-      const fixed = stripFence(await call(fixUser(creator.name, md, fixNotes(review, use.length, lang, withMissed), withMissed ? missed : '', lang)))
+    const notes = fixNotes(review, use.length, lang, withMissed)
+    if (notes.length) try {
+      const fixed = stripFence(await call(fixUser(creator.name, md, notes, withMissed ? missed : '', lang)))
       const after = reviewKb(fixed, use.length, lang)
       if (badness(after) < badness(review)) [md, review] = [fixed, after]
     } catch (e) {
