@@ -1,7 +1,8 @@
+import { badness, fixNotes, needsFix, reviewKb } from '@/lib/kb-check'
 import { toJpeg } from '@/lib/image'
 import { LlmError, PROVIDER_NAMES, generate, inputBudget, parseJson, transcribe } from '@/lib/llm'
 import { getLang, t, type Lang } from '@/lib/i18n'
-import { HOOK_TYPES, aggregateSystem, aggregateUser, digestSystem, digestUser, mergeUser } from '@/lib/prompts'
+import { HOOK_TYPES, aggregateSystem, aggregateUser, digestSystem, digestUser, fixUser, mergeUser } from '@/lib/prompts'
 import { getCache, getPost, getPosts, getSettings, saveCache, saveKnowledgeBase, updatePost } from '@/lib/store'
 import type { Creator, Digest, Post, Settings } from '@/types'
 
@@ -203,12 +204,31 @@ export async function buildKnowledgeBase(creator: Creator, settings: Settings, o
     parts = next
   }
 
+  let md = parts[0]
+  let review = reviewKb(md, use.length, lang)
+  if (needsFix(review, use.length)) {
+    status = t('kb.fixing')
+    say(status)
+    const room = budget - md.length
+    const missed = JSON.stringify(items.filter((it) => review.uncited.includes(it.n)))
+    const withMissed = missed.length <= room
+    try {
+      const fixed = stripFence(await call(fixUser(creator.name, md, fixNotes(review, use.length, lang, withMissed), withMissed ? missed : '', lang)))
+      const after = reviewKb(fixed, use.length, lang)
+      if (badness(after) < badness(review)) [md, review] = [fixed, after]
+    } catch (e) {
+      // 修正只是加分：失敗就用原本的版本，但按下停止還是要停
+      if (signal?.aborted || !(e instanceof LlmError)) throw e
+    }
+  }
+
   const dropped = posts.length - use.length
-  const note = `_${dropped
-    ? t('kb.noteDropped', { total: posts.length, dropped, use: use.length }, lang)
-    : t('kb.note', { total: posts.length }, lang)}_`
+  const note = `_${[
+    dropped ? t('kb.noteDropped', { total: posts.length, dropped, use: use.length }, lang) : t('kb.note', { total: posts.length }, lang),
+    ...(review.uncited.length ? [t('kb.noteUncited', { n: review.uncited.length }, lang)] : []),
+  ].join(t('kb.noteJoin', {}, lang))}_`
   await saveKnowledgeBase(creator.name, {
-    markdown: `${note}\n\n${parts[0]}\n\n${sourceIndex(use)}\n`,
+    markdown: `${note}\n\n${md}\n\n${sourceIndex(use, lang, new Set(review.uncited))}\n`,
     updatedAt: Date.now(),
     postCount: use.length,
   })
@@ -221,8 +241,9 @@ export async function keptPosts(creator: Creator) {
   return { posts, use: kept.length ? kept : posts }
 }
 
-export const sourceIndex = (use: Post[], lang: Lang = getLang()) =>
-  `## ${t('src.heading', {}, lang)}\n\n${use.map((p, i) => `${i + 1}. ${p.digest!.topic} — [${t('src.view', {}, lang)}](${postUrl(p.code)})`).join('\n')}`
+export const sourceIndex = (use: Post[], lang: Lang = getLang(), unused = new Set<number>()) =>
+  `## ${t('src.heading', {}, lang)}\n\n${use.map((p, i) => `${i + 1}. ${p.digest!.topic} — [${t('src.view', {}, lang)}](${postUrl(p.code)})${
+    unused.has(i + 1) ? t('src.unused', {}, lang) : ''}`).join('\n')}`
 
 const VALUE_ALIAS: Record<string, Digest['value']> = { 高: '高', 中: '中', 低: '低', high: '高', medium: '中', mid: '中', low: '低' }
 

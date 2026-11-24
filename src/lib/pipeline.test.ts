@@ -78,3 +78,45 @@ it('AI 回的是陣列或字串，不是物件：同樣算失敗，不存成空�
   expect((await post()).status).toBe('error')
   reply = '{"topic":"t","points":["p"],"quotes":[],"terms":[],"value":"高"}'
 })
+
+const kbPosts = (n: number) => {
+  const codes = Array.from({ length: n }, (_, i) => `K${i + 1}`)
+  codes.forEach((code, i) => mem.set(`post:${code}`, JSON.stringify({ code, creator: 'coach', takenAt: n - i, caption: '', collectedAt: 0, status: 'done',
+    digest: { topic: `主題${i + 1}`, points: ['重點'], quotes: [], terms: [], value: '高' } })))
+  return { name: 'coach', fullName: '', codes } as Creator
+}
+const fullKb = '## 這個創作者在教什麼\n\n- 先刪再快 [1]\n\n## 核心方法論\n\n- 先刪 [2]\n\n## 主題聚類\n\n- 時間 [3]\n\n## 可行動清單\n\n- [ ] 刪一步 [1]'
+
+it('知識庫：AI 漏了章節或寫錯編號，程式抓到後請它修一次，修好的版本才存', async () => {
+  const { buildKnowledgeBase } = await import('./pipeline')
+  const { getKnowledgeBase, getSettings } = await import('./store')
+  const c = kbPosts(3)
+  const replies = ['## 這個創作者在教什麼\n\n- 先刪再快 [9]', fullKb]
+  const asked: string[] = []
+  vi.stubGlobal('fetch', async (_u: string, init: RequestInit) => {
+    asked.push(JSON.parse(String(init.body)).messages[1].content)
+    return new Response(JSON.stringify({ choices: [{ message: { content: replies.shift() } }] }))
+  })
+  await buildKnowledgeBase(c, await getSettings(), () => {})
+  expect(asked).toHaveLength(2)
+  expect(asked[1]).toContain('[9]')
+  const kb = (await getKnowledgeBase('coach'))!.markdown
+  expect(kb).toContain('## 可行動清單')
+  expect(kb).not.toContain('未引用')
+})
+
+it('知識庫：修正那次呼叫失敗，就存原本的版本，沒引用的貼文標在來源索引', async () => {
+  const { buildKnowledgeBase } = await import('./pipeline')
+  const { getKnowledgeBase, getSettings } = await import('./store')
+  const c = kbPosts(3)
+  let calls = 0
+  vi.stubGlobal('fetch', async () => (++calls === 1
+    ? new Response(JSON.stringify({ choices: [{ message: { content: fullKb.replace('[3]', '').replace('## 主題聚類', '## 其他') } }] }))
+    : new Response('bad key', { status: 401 })))
+  await buildKnowledgeBase(c, await getSettings(), () => {})
+  const kb = (await getKnowledgeBase('coach'))!.markdown
+  expect(calls).toBe(2)
+  expect(kb).toContain('## 其他')
+  expect(kb).toMatch(/3\. 主題3 — \[看原文\]\([^)]+\)（未引用）/)
+  expect(kb).toContain('1 則沒有被引用')
+})

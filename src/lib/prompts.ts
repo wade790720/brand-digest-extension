@@ -43,6 +43,10 @@ const sections = (lang: Lang) => {
 ## ${h('kb.hActions')}
 
 整合與比對要求：
+- 「${h('kb.hTeach')}」的第一點：用一句白話講出這位創作者的核心主張，30 字以內，要有立場、讓人可能不同意。
+  不好：「透過高效系統、好產品與長期行動獲得成功。」好：「先刪掉工作再自動化，剩下的才值得做。」
+- 每一點只講一件事，先講做法或觀點本身，不用分號串好幾件事。
+- 保留具體的數字、名稱、公式、工具和步驟，不要改寫成空泛的說法。沒有理由也沒有方法的口號（例如「做自己喜歡的事、永不放棄」）直接刪掉。
 - 「${h('kb.hMethod')}」：把散落各篇、講的是同一件事的知識點『合併成一條』，整合各篇細節給出最完整版本；
   不是逐篇羅列。若多篇對同一做法有不同說法，交叉比對後給出你判斷最好的做法，並註明差異。
 - 「${h('kb.hClusters')}」：把相同/相似概念的篇章分到同一群，每群一個小標題，群內做交叉整合（共同點寫成通則、
@@ -59,6 +63,15 @@ export const aggregateUser = (creator: string, count: number, digestsJson: strin
 
 【各篇萃取結果】
 ${digestsJson}`
+
+export const fixUser = (creator: string, draft: string, notes: string[], missed: string, lang: Lang) =>
+  `以下是「${creator}」的知識庫草稿。程式檢查發現下面的問題，請修正後輸出完整的知識庫 Markdown，其他內容保持原樣，${sections(lang)}
+
+【要修正的問題】
+${notes.map((n) => `- ${n}`).join('\n')}
+${missed ? `\n【還沒整合的貼文】\n${missed}\n` : ''}
+【草稿】
+${draft}`
 
 export const mergeUser = (creator: string, parts: string[], lang: Lang) =>
   `以下是「${creator}」的知識庫，因為內容太多分成 ${parts.length} 批整理。請把它們合併成一份，
