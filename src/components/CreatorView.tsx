@@ -23,7 +23,7 @@ import { deleteTheory, getChecks, getKnowledgeBase, getPlaybook, getPosts, getSe
 import { linkCites } from '@/lib/cites'
 import { rehypeTables, repairBold } from '@/lib/md-fix'
 import { getLang, t, type Key } from '@/lib/i18n'
-import { rehypeSections, type Tone } from '@/lib/sections'
+import { rehypePointTones, rehypeSections, type Tone } from '@/lib/sections'
 import { dropTeachLine, taskKey, taskKeys } from '@/lib/tasks'
 import { cn, download } from '@/lib/utils'
 import type { Creator, KnowledgeBase, Playbook, Post, Theory, TheoryDoc } from '@/types'
@@ -158,7 +158,7 @@ function Markdown({ text, tasks }: { text: string; tasks?: Tasks }) {
   return (
     <article className="md-doc prose prose-neutral max-w-none dark:prose-invert">
       <MdContext value={{ tasks, lines }}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr, rehypeTables, rehypeSections]} components={MD_COMPONENTS}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeBr, rehypeTables, rehypePointTones, rehypeSections]} components={MD_COMPONENTS}>
           {linkCites(repairBold(text))}
         </ReactMarkdown>
       </MdContext>

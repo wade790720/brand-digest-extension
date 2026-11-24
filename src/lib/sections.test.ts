@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { rehypeSections, toneOf } from './sections'
+import { rehypePointTones, rehypeSections, toneOf } from './sections'
 
 it('標題決定區塊顏色，中英文都認得，認不得的算做法', () => {
   expect(toneOf('這個創作者在教什麼')).toBe('key')
@@ -19,4 +19,24 @@ it('每個 ## 連同內容包成一區，第一個標題前的內容留在外面
   rehypeSections()(withRule)
   expect((withRule.children[0] as { children: { tagName?: string }[] }).children.map((n) => n.tagName)).toEqual(['h2', 'p'])
   expect(tree.children[1]).toMatchObject({ properties: { dataTone: 'action' }, children: [{ tagName: 'h2' }, { tagName: 'ul' }] })
+})
+
+it('要點開頭的標籤換成小標、整點上色；中英文都認得；認不得的字和子項目不動', () => {
+  const text = (value: string) => ({ type: 'text', value })
+  const li = (...children: object[]) => ({ type: 'element', tagName: 'li', children })
+  const strong = { type: 'element', tagName: 'strong', children: [text('先刪再快')] }
+  const tree = { type: 'root', children: [{ type: 'element', tagName: 'ul', children: [
+    li(text('做法｜'), strong, text('：先問能不能刪 [2]')),
+    li({ type: 'element', tagName: 'p', children: [text('Watch | 太早自動化')] }),
+    li(text('備註｜不是標籤')),
+  ] }] }
+  rehypePointTones()(tree as never)
+  const [a, b, c] = tree.children[0].children as { properties?: { dataTone?: string }; children: { tagName?: string; value?: string; children?: { value?: string; tagName?: string }[] }[] }[]
+  expect(a.properties?.dataTone).toBe('method')
+  expect(a.children[0]).toMatchObject({ tagName: 'span', children: [{ value: '做法' }] })
+  expect(a.children[1].value).toBe('')
+  expect(b.properties?.dataTone).toBe('caution')
+  expect(b.children[0].children?.[0]).toMatchObject({ tagName: 'span' })
+  expect(b.children[0].children?.[1]).toMatchObject({ value: '太早自動化' })
+  expect(c.properties?.dataTone).toBeUndefined()
 })

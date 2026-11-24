@@ -292,6 +292,10 @@ const zh = {
   'kb.hClusters': '主題聚類',
   'kb.hActions': '可行動清單',
   'src.heading': '來源索引',
+  'tone.key': '重點',
+  'tone.method': '做法',
+  'tone.action': '照做',
+  'tone.caution': '留意',
   'src.unused': '（未引用）',
   'src.view': '看原文',
 
@@ -626,6 +630,10 @@ const en: Record<Key, string> = {
   'kb.hClusters': 'Topic groups',
   'kb.hActions': 'Action list',
   'src.heading': 'Sources',
+  'tone.key': 'Key',
+  'tone.method': 'How',
+  'tone.action': 'Do',
+  'tone.caution': 'Watch',
   'src.unused': ' (not used)',
   'src.view': 'View post',
 
