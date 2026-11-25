@@ -1,16 +1,21 @@
 // Chrome Web Store screenshots, 1280x800, from the dev preview with made-up demo data written into localStorage.
-//   node scripts/store-shots.mjs [out-dir]        (default .local/store-shots)
-// Writes zh-1.png … zh-5.png and en-1.png … en-5.png: one highlight each, the app inside the store frame.
+//   node scripts/store-shots.mjs [out-dir]        (default: the next free ../store-assets/<repo>/vN)
+// Writes tw/ and en/: screenshot-1.png … 5 (one highlight each, the app inside the store frame),
+// plus promo-small.png, promo-marquee.png and the promo-shot.png they use.
+// Never writes into a folder that exists, so earlier versions stay as they were.
 // Drives the installed Chrome over the DevTools protocol, so it needs no extra npm package. Set CHROME to override its path.
 // The demo creator, posts and documents are fictional. The page may only talk to the local dev server; any other request is blocked.
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const ROOT = resolve(import.meta.dirname, '..')
-const OUT = resolve(process.argv[2] ?? join(ROOT, '.local/store-shots'))
+const ASSETS = resolve(ROOT, '../store-assets', basename(ROOT))
+const nextVersion = () => { let n = 1; while (existsSync(join(ASSETS, `v${n}`))) n++; return join(ASSETS, `v${n}`) }
+const OUT = resolve(process.argv[2] ?? nextVersion())
+if (existsSync(OUT)) throw new Error(`${OUT} already exists; pick a new folder so the old shots are kept`)
 const CHROME = process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 const PORT = 5188, DEBUG = 9334
 const APP = `http://localhost:${PORT}/app.html`
@@ -26,7 +31,13 @@ const thumb = (i, word) => 'data:image/svg+xml,' + encodeURIComponent(
   `<stop stop-color="hsl(${HUES[i]} 70% 62%)"/><stop offset="1" stop-color="hsl(${(HUES[i] + 40) % 360} 65% 38%)"/></linearGradient></defs>` +
   `<rect width="180" height="320" fill="url(#g)"/><circle cx="140" cy="60" r="70" fill="#fff" opacity=".12"/><circle cx="30" cy="250" r="90" fill="#000" opacity=".08"/>` +
   `<rect x="18" y="214" width="144" height="58" rx="10" fill="#000" opacity=".28"/>` +
-  `<text x="90" y="252" text-anchor="middle" font-family="Segoe UI, Microsoft JhengHei, sans-serif" font-size="26" font-weight="800" fill="#fff">${word}</text></svg>`)
+  `<text x="90" y="243" dominant-baseline="central" text-anchor="middle" font-family="Segoe UI, Microsoft JhengHei, sans-serif" font-size="${fit(word)}" font-weight="800" fill="#fff">${word}</text></svg>`)
+// The label box is 144px wide: shrink long words so they keep 10px of padding on each side.
+// shortcut: CJK counted as 1em and everything else as 0.6em; measure with canvas if a word still touches the edge.
+function fit(word) {
+  const em = [...word].reduce((n, c) => n + (/[\u2E80-\uFFEF]/.test(c) ? 1 : 0.6), 0)
+  return Math.min(26, Math.floor(124 / em))
+}
 const avatar = 'data:image/svg+xml,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><defs><linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f6a35c"/><stop offset="1" stop-color="#7c5cff"/></linearGradient></defs>' +
   '<rect width="96" height="96" fill="url(#a)"/><circle cx="48" cy="38" r="17" fill="#fff" opacity=".9"/><ellipse cx="48" cy="88" rx="30" ry="24" fill="#fff" opacity=".9"/></svg>')
@@ -450,6 +461,19 @@ async function shot(url, file, { width = 1280, height = 800, scale = 1, ready, s
   writeFileSync(file, Buffer.from(data, 'base64'))
 }
 
+// Promo tiles from ../store-assets/templates/promo.html, using the first highlight as the app shot.
+async function promoTiles(lang, dir, steps) {
+  const appShot = join(dir, 'promo-shot.png')
+  await shot(APP, appShot, { width: 1100, height: 488, scale: 2, steps: `${steps}; document.querySelector('footer[role=status]')?.remove()`, ready: `!!document.querySelector('main button')` })
+  for (const [size, width, height] of [['small', 440, 280], ['marquee', 1400, 560]]) {
+    const page = new URL(pathToFileURL(join(ROOT, '../store-assets/templates/promo.html')))
+    page.search = new URLSearchParams({ p: 'brand-digest', size, lang, shot: pathToFileURL(appShot).href }).toString()
+    const file = join(dir, `promo-${size}.png`)
+    await shot(page.href, file, { width, height, ready: `[...document.images].every((i) => i.complete && i.naturalWidth)` })
+    console.log('saved', file)
+  }
+}
+
 try {
   await until(() => fetch(APP).then((r) => r.ok), 'the dev server')
   const target = await until(() => fetch(`http://127.0.0.1:${DEBUG}/json/list`).then((r) => r.json()).then((t) => t.find((x) => x.type === 'page')), 'Chrome')
@@ -469,9 +493,12 @@ try {
         orb: pathToFileURL(join(ROOT, 'public/icons/icon-128.png')).href,
         shot: pathToFileURL(inner).href,
       }).toString()
-      const file = join(OUT, `${lang}-${i + 1}.png`)
+      const dir = join(OUT, lang === 'zh' ? 'tw' : 'en')
+      mkdirSync(dir, { recursive: true })
+      const file = join(dir, `screenshot-${i + 1}.png`)
       await shot(frame.href, file, { ready: `[...document.images].every((i) => i.complete && i.naturalWidth)` })
       console.log('saved', file)
+      if (i === 0) await promoTiles(lang, dir, s.steps)
     }
     await send('Page.removeScriptToEvaluateOnNewDocument', { identifier })
   }
