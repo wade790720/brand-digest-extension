@@ -8,8 +8,9 @@ import { SettingsView } from '@/components/SettingsView'
 import { Welcome } from '@/components/Welcome'
 import { Button } from '@/components/ui/button'
 import {
-  Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { LlmError } from '@/lib/llm'
 import { processCreator, type Progress, type RunEvent, type Step } from '@/lib/pipeline'
 import { cn } from '@/lib/utils'
@@ -171,22 +172,20 @@ export default function App() {
 
       <StatusBar run={run} creators={creators} />
 
-      <Dialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('app.deleteTitle', { name: toDelete?.name ?? '' })}</DialogTitle>
-            <DialogDescription>
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-semibold">{t('app.deleteTitle', { name: toDelete?.name ?? '' })}</AlertDialogTitle>
+            <AlertDialogDescription>
               {t('app.deleteDesc', { n: toDelete?.codes.length ?? 0 })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">{t('common.cancel')}</Button>
-            </DialogClose>
-            <Button variant="destructive" onClick={confirmDelete}>{t('common.delete')}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={confirmDelete}>{t('common.delete')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -7,6 +7,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme="system"
+      position="bottom-right"
+      offset={{ bottom: "3.5rem" }} // 留出狀態列（min-h-9）的高度，不蓋住進度條
+      mobileOffset={{ bottom: "3.5rem" }}
       className="toaster group"
       icons={{
         success: (

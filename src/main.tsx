@@ -26,7 +26,7 @@ getSettings().then((s) => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />
-      <Toaster richColors position="bottom-right" />
+      <Toaster />
     </StrictMode>,
   )
 })
