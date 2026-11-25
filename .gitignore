@@ -28,3 +28,6 @@ dist-ssr
 *.crx
 *.pem
 *.stackdump
+
+# 商店截圖（npm run shots 產生）
+.local
